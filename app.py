@@ -35,17 +35,15 @@ app = Flask(__name__)
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
 TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 
-# Construction de l'URL de connexion dynamique
 if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
-    # Connexion à Turso via libsql avec authentification
-    db_url = f"{TURSO_DATABASE_URL}?authToken={TURSO_AUTH_TOKEN}"
+    # Convert libsql:// → sqlite+libsql://
+    db_url = TURSO_DATABASE_URL.replace("libsql://", "sqlite+libsql://") + f"?authToken={TURSO_AUTH_TOKEN}"
 else:
-    # Mode de secours : fichier local si les variables ne sont pas définies
-    db_url = 'sqlite:///energie_cameroun.db'
+    db_url = "sqlite:///energie_cameroun.db"
 
-# Use SQLite for this Flask app (ignore system DATABASE_URL)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Use SQLite for this Flask app (ignore system DATABASE_URL)
 app.config['JSON_SORT_KEYS'] = False
 
 db = SQLAlchemy(app)
