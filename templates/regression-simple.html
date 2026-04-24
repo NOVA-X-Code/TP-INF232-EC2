@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Régression linéaire simple — ÉnergieData Cameroun</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .analysis-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+      }
+
+      .result-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 2rem;
+        margin-bottom: 2rem;
+      }
+
+      .equation-box {
+        background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        border: 2px solid #fde68a;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        text-align: center;
+        margin-bottom: 1.5rem;
+      }
+
+      .equation-box .equation {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #b45309;
+        font-family: "Courier New", monospace;
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.875rem;
+      }
+
+      .metric:last-child {
+        border-bottom: none;
+      }
+
+      .metric-label {
+        font-weight: 600;
+        color: #475569;
+      }
+
+      .metric-value {
+        color: #0f1e3d;
+        font-weight: 700;
+      }
+
+      .chart-container {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .chart-wrapper {
+        position: relative;
+        height: 400px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="header-container">
+        <div class="logo">
+          <div class="logo-icon">⚡</div>
+          <div class="logo-text">
+            <strong>Énergie<span>Data</span></strong>
+            <small>Cameroun</small>
+          </div>
+        </div>
+        <nav>
+          <a href="/">Accueil</a>
+          <a href="/submit">Soumettre</a>
+          <a href="/dashboard">Tableau de bord</a>
+          <a href="/data">Données</a>
+          <a href="/analytics">Analyses</a>
+          <a href="/regions">Besoins régionaux</a>
+        </nav>
+        <button class="mobile-menu-btn">☰</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="analysis-container">
+      <h1>Régression linéaire simple</h1>
+      <p style="color: #64748b; margin-bottom: 2rem">
+        Analyse de la relation entre la taille du ménage et la consommation
+        électrique.
+      </p>
+
+      <div class="result-card">
+        <h3 style="margin-bottom: 1.5rem">Modèle de régression</h3>
+
+        <div class="equation-box" id="equationBox" style="display: none">
+          <div
+            style="font-size: 0.875rem; color: #92400e; margin-bottom: 0.5rem"
+          >
+            Équation du modèle
+          </div>
+          <div class="equation" id="equation">Chargement...</div>
+        </div>
+
+        <div id="metricsBox" style="display: none">
+          <div class="metric">
+            <span class="metric-label">Pente (coefficient)</span>
+            <span class="metric-value" id="slope">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Ordonnée à l'origine</span>
+            <span class="metric-value" id="intercept">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">R² (coefficient de détermination)</span>
+            <span class="metric-value" id="r_squared">-</span>
+          </div>
+        </div>
+
+        <div
+          id="loadingBox"
+          style="text-align: center; padding: 2rem; color: #64748b"
+        >
+          <div class="loading"></div>
+          <p style="margin-top: 1rem">Calcul du modèle en cours...</p>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">Visualisation de la régression</h3>
+        <div class="chart-wrapper">
+          <canvas id="regressionChart"></canvas>
+        </div>
+      </div>
+
+      <div class="result-card">
+        <h3 style="margin-bottom: 1rem">Interprétation</h3>
+        <div id="interpretation" style="color: #475569; line-height: 1.8">
+          <p>Chargement de l'interprétation...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer style="margin-top: 4rem">
+      <div class="footer-container">
+        <div class="footer-section">
+          <h4>À propos</h4>
+          <p style="font-size: 0.875rem; color: var(--muted-fg)">
+            ÉnergieData Cameroun est une plateforme nationale de collecte et
+            d'analyse des données de consommation électrique.
+          </p>
+        </div>
+        <div class="footer-section">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="/">Accueil</a></li>
+            <li><a href="/submit">Soumettre</a></li>
+            <li><a href="/dashboard">Tableau de bord</a></li>
+            <li><a href="/data">Données</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Ressources</h4>
+          <ul>
+            <li><a href="/analytics">Analyses</a></li>
+            <li><a href="/regions">Besoins régionaux</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Code source</h4>
+          <ul>
+            <li>
+              <a
+                href="https://github.com/NOVA-X-Code/TP-INF232-EC2.git"
+                target="_blank"
+                rel="noopener noreferrer"
+                >📁 Repo GitHub</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 ÉnergieData Cameroun. Tous les droits réservés.</p>
+      </div>
+    </footer>
+
+    <script>
+      async function loadRegression() {
+        try {
+          const response = await fetch("/api/analysis/regression-simple");
+          const data = await response.json();
+
+          if (data.error) {
+            document.getElementById("loadingBox").innerHTML =
+              '<p style="color: #ef4444;">Erreur : ' + data.error + "</p>";
+            return;
+          }
+
+          // Display results
+          document.getElementById("equation").textContent = data.equation;
+          document.getElementById("slope").textContent = data.slope.toFixed(4);
+          document.getElementById("intercept").textContent =
+            data.intercept.toFixed(2);
+          document.getElementById("r_squared").textContent =
+            (data.r_squared * 100).toFixed(2) + "%";
+
+          // Hide loading, show results
+          document.getElementById("loadingBox").style.display = "none";
+          document.getElementById("equationBox").style.display = "block";
+          document.getElementById("metricsBox").style.display = "block";
+
+          // Update interpretation
+          const interp = `<p><strong>Pente (${data.slope.toFixed(4)}) :</strong> Pour chaque personne supplémentaire dans le ménage, la consommation électrique augmente en moyenne de ${Math.abs(data.slope).toFixed(2)} kWh.</p>
+                <p><strong>Ordonnée à l'origine (${data.intercept.toFixed(2)}) :</strong> La consommation de base estimée est de ${data.intercept.toFixed(2)} kWh.</p>
+                <p><strong>R² (${(data.r_squared * 100).toFixed(2)}%) :</strong> Le modèle explique ${(data.r_squared * 100).toFixed(2)}% de la variance de la consommation. ${data.r_squared > 0.7 ? "Bon ajustement." : data.r_squared > 0.5 ? "Ajustement modéré." : "Ajustement faible."}</p>`;
+          document.getElementById("interpretation").innerHTML = interp;
+
+          // Create chart (placeholder - would need actual data points)
+          new Chart(document.getElementById("regressionChart"), {
+            type: "scatter",
+            data: {
+              datasets: [
+                {
+                  label: "Données observées",
+                  data: [
+                    { x: 1, y: data.intercept },
+                    { x: 5, y: data.intercept + 5 * data.slope },
+                  ],
+                  borderColor: "#0f1e3d",
+                  backgroundColor: "rgba(15, 30, 61, 0.1)",
+                  showLine: true,
+                  fill: false,
+                  tension: 0,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: true },
+              },
+              scales: {
+                x: {
+                  title: {
+                    display: true,
+                    text: "Taille du ménage (personnes)",
+                  },
+                },
+                y: { title: { display: true, text: "Consommation (kWh)" } },
+              },
+            },
+          });
+        } catch (error) {
+          console.error("Error:", error);
+          document.getElementById("loadingBox").innerHTML =
+            '<p style="color: #ef4444;">Erreur lors du chargement des données</p>';
+        }
+      }
+
+      loadRegression();
+    </script>
+  </body>
+</html>

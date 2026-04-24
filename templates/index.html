@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ÉnergieData Cameroun — Données énergétiques nationales</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <style>
+      .hero {
+        background: linear-gradient(135deg, #0f1e3d 0%, #1a2e52 100%);
+        color: white;
+        padding: 6rem 1.5rem;
+        text-align: center;
+      }
+
+      .hero h1 {
+        color: white;
+        margin-bottom: 1rem;
+      }
+
+      .hero p {
+        font-size: 1.125rem;
+        margin-bottom: 2rem;
+        opacity: 0.95;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .hero-buttons {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 2rem;
+        margin: 3rem 0;
+      }
+
+      .feature-card {
+        text-align: center;
+        padding: 2rem;
+      }
+
+      .feature-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+      }
+
+      .regions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin: 2rem 0;
+      }
+
+      .region-badge {
+        padding: 1rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        text-align: center;
+        font-weight: 600;
+        transition: all 0.2s;
+      }
+
+      .region-badge:hover {
+        border-color: #0f1e3d;
+        box-shadow: 0 2px 8px rgba(15, 30, 61, 0.1);
+      }
+
+      .section {
+        padding: 3rem 1.5rem;
+      }
+
+      .section-alt {
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="header-container">
+        <div class="logo">
+          <div class="logo-icon">⚡</div>
+          <div class="logo-text">
+            <strong>Énergie<span>Data</span></strong>
+            <small>Cameroun</small>
+          </div>
+        </div>
+        <nav>
+          <a href="/">Accueil</a>
+          <a href="/submit">Soumettre</a>
+          <a href="/dashboard">Tableau de bord</a>
+          <a href="/data">Données</a>
+          <a href="/analytics">Analyses</a>
+          <a href="/regions">Besoins régionaux</a>
+        </nav>
+        <button class="mobile-menu-btn" aria-label="Menu" aria-expanded="false">
+          ☰
+        </button>
+      </div>
+      <!-- Mobile Navigation -->
+      <nav class="mobile-nav">
+        <a href="/">Accueil</a>
+        <a href="/submit">Soumettre</a>
+        <a href="/dashboard">Tableau de bord</a>
+        <a href="/data">Données</a>
+        <a href="/analytics">Analyses</a>
+        <a href="/regions">Besoins régionaux</a>
+      </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container">
+        <div
+          style="
+            display: inline-block;
+            background: rgba(251, 191, 36, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+          "
+        >
+          ⚡ Secteur Énergétique Camerounais
+        </div>
+        <h1>Données énergétiques du Cameroun</h1>
+        <p>
+          Plateforme nationale de collecte, d'analyse et de visualisation des
+          données de consommation électrique des ménages camerounais, région par
+          région.
+        </p>
+        <div class="hero-buttons">
+          <a href="/submit" class="btn btn-accent"
+            >⚡ Soumettre ma consommation</a
+          >
+          <a href="/dashboard" class="btn btn-secondary"
+            >📊 Voir les analyses</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="section">
+      <div class="container">
+        <h2 style="text-align: center; margin-bottom: 3rem">
+          Fonctionnalités principales
+        </h2>
+        <div class="features">
+          <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Soumettre vos données</h3>
+            <p>
+              Contribuez à la collecte nationale en soumettant votre
+              consommation électrique mensuelle.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Tableau de bord</h3>
+            <p>
+              Consultez les statistiques nationales et régionales en temps réel.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📈</div>
+            <h3>Analyses avancées</h3>
+            <p>
+              Explorez les tendances mensuelles et les distributions de
+              consommation.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🗺️</div>
+            <h3>Besoins régionaux</h3>
+            <p>Estimations des besoins énergétiques par région du Cameroun.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💾</div>
+            <h3>Données complètes</h3>
+            <p>
+              Accès à toutes les données collectées avec filtres et export CSV.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔐</div>
+            <h3>Tarification ENEO</h3>
+            <p>Calcul automatique des factures selon le barème officiel.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Regions Section -->
+    <section class="section section-alt">
+      <div class="container">
+        <h2 style="text-align: center; margin-bottom: 2rem">
+          Couverture nationale — 10 régions
+        </h2>
+        <div class="regions-grid">
+          <div class="region-badge">Adamaoua</div>
+          <div class="region-badge">Centre</div>
+          <div class="region-badge">Est</div>
+          <div class="region-badge">Extrême-Nord</div>
+          <div class="region-badge">Littoral</div>
+          <div class="region-badge">Nord</div>
+          <div class="region-badge">Nord-Ouest</div>
+          <div class="region-badge">Ouest</div>
+          <div class="region-badge">Sud</div>
+          <div class="region-badge">Sud-Ouest</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="section">
+      <div class="container" style="text-align: center; max-width: 600px">
+        <h2>Prêt à contribuer ?</h2>
+        <p>
+          Tous les citoyens peuvent soumettre leurs données de consommation
+          électrique de manière anonyme et contribuer à la compréhension des
+          besoins énergétiques du Cameroun.
+        </p>
+        <a href="/submit" class="btn btn-primary">Commencer maintenant</a>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <div class="footer-container">
+        <div class="footer-section">
+          <h4>À propos</h4>
+          <p style="font-size: 0.875rem; color: var(--muted-fg)">
+            ÉnergieData Cameroun est une plateforme nationale de collecte et
+            d'analyse des données de consommation électrique.
+          </p>
+        </div>
+        <div class="footer-section">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="/">Accueil</a></li>
+            <li><a href="/submit">Soumettre</a></li>
+            <li><a href="/dashboard">Tableau de bord</a></li>
+            <li><a href="/data">Données</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Ressources</h4>
+          <ul>
+            <li><a href="/analytics">Analyses</a></li>
+            <li><a href="/regions">Besoins régionaux</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Code source</h4>
+          <ul>
+            <li>
+              <a
+                href="https://github.com/NOVA-X-Code/TP-INF232-EC2.git"
+                target="_blank"
+                rel="noopener noreferrer"
+                >📁 Repo GitHub</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 ÉnergieData Cameroun. Tous les droits réservés.</p>
+      </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/mobile-menu.js') }}"></script>
+  </body>
+</html>

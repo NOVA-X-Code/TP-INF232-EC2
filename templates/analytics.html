@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analyses avancées — ÉnergieData Cameroun</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .analytics-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+      }
+
+      .chart-container {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .chart-wrapper {
+        position: relative;
+        height: 400px;
+        margin-bottom: 1rem;
+      }
+
+      .equation-box {
+        background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        border: 2px solid #fde68a;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        text-align: center;
+        margin-bottom: 1.5rem;
+      }
+
+      .equation-box .equation {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #b45309;
+        font-family: "Courier New", monospace;
+      }
+
+      .result-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 2rem;
+        margin-bottom: 2rem;
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.875rem;
+      }
+
+      .metric:last-child {
+        border-bottom: none;
+      }
+
+      .metric-label {
+        font-weight: 600;
+        color: #475569;
+      }
+
+      .metric-value {
+        color: #0f1e3d;
+        font-weight: 700;
+      }
+
+      .prediction-box {
+        background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+        border: 2px solid #7dd3fc;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+      }
+
+      .prediction-box h4 {
+        color: #0369a1;
+        margin-bottom: 1rem;
+      }
+
+      .form-group {
+        margin-bottom: 1rem;
+      }
+
+      .form-group label {
+        display: block;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+      }
+
+      .form-group input {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: #0369a1;
+        box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.1);
+      }
+
+      .prediction-result {
+        background: white;
+        border: 2px solid #7dd3fc;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-top: 1rem;
+        text-align: center;
+      }
+
+      .prediction-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0369a1;
+      }
+
+      .prediction-label {
+        font-size: 0.875rem;
+        color: #0c4a6e;
+        margin-top: 0.25rem;
+      }
+
+      .btn-predict {
+        background-color: #0369a1;
+        color: white;
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 0.375rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      .btn-predict:hover {
+        background-color: #0284c7;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="header-container">
+        <div class="logo">
+          <div class="logo-icon">⚡</div>
+          <div class="logo-text">
+            <strong>Énergie<span>Data</span></strong>
+            <small>Cameroun</small>
+          </div>
+        </div>
+        <nav>
+          <a href="/">Accueil</a>
+          <a href="/submit">Soumettre</a>
+          <a href="/dashboard">Tableau de bord</a>
+          <a href="/data">Données</a>
+          <a href="/analytics" class="active">Analyses</a>
+          <a href="/regions">Besoins régionaux</a>
+        </nav>
+        <button class="mobile-menu-btn">☰</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="analytics-container">
+      <h1>Analyses avancées</h1>
+      <p style="color: #64748b; margin-bottom: 2rem">
+        Explorez les tendances mensuelles et les distributions de consommation
+        par région.
+      </p>
+
+      <div style="margin-bottom: 2rem">
+        <a
+          href="/advanced-analysis"
+          style="
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background-color: #f59e0b;
+            color: white;
+            text-decoration: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+          "
+        >
+          → Analyses plus avancées
+        </a>
+      </div>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">Tendances mensuelles nationales</h3>
+        <div class="chart-wrapper">
+          <canvas id="trendsChart"></canvas>
+        </div>
+      </div>
+
+      <div class="result-card">
+        <h3 style="margin-bottom: 1.5rem">Régression linéaire simple</h3>
+        <p style="color: #64748b; margin-bottom: 1.5rem">
+          Relation entre la taille du ménage et la consommation électrique.
+        </p>
+
+        <div class="equation-box" id="equationBox" style="display: none">
+          <div
+            style="font-size: 0.875rem; color: #92400e; margin-bottom: 0.5rem"
+          >
+            Équation du modèle
+          </div>
+          <div class="equation" id="equation">Chargement...</div>
+        </div>
+
+        <div id="regressionMetricsBox" style="display: none">
+          <div class="metric">
+            <span class="metric-label">Pente (coefficient)</span>
+            <span class="metric-value" id="slope">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Ordonnée à l'origine</span>
+            <span class="metric-value" id="intercept">-</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">R² (coefficient de détermination)</span>
+            <span class="metric-value" id="r_squared">-</span>
+          </div>
+        </div>
+
+        <div
+          id="regressionLoadingBox"
+          style="text-align: center; padding: 2rem; color: #64748b"
+        >
+          <div class="loading"></div>
+          <p style="margin-top: 1rem">Calcul du modèle en cours...</p>
+        </div>
+
+        <div
+          class="prediction-box"
+          id="predictionBoxSimple"
+          style="display: none"
+        >
+          <h4>Estimateur de consommation</h4>
+          <div class="form-group">
+            <label for="householdSizeInput">Taille du ménage (personnes)</label>
+            <input
+              type="number"
+              id="householdSizeInput"
+              min="1"
+              max="50"
+              value="4"
+              onchange="predictSimple()"
+              oninput="predictSimple()"
+            />
+          </div>
+          <div id="predictionResultSimple"></div>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">Visualisation de la régression</h3>
+        <div class="chart-wrapper">
+          <canvas id="regressionChart"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">
+          Statistiques descriptives par région
+        </h3>
+        <div style="overflow-x: auto">
+          <table style="width: 100%; font-size: 0.875rem">
+            <thead>
+              <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0">
+                <th style="padding: 1rem; text-align: left">Région</th>
+                <th style="padding: 1rem; text-align: right">Moyenne (kWh)</th>
+                <th style="padding: 1rem; text-align: right">Médiane (kWh)</th>
+                <th style="padding: 1rem; text-align: right">Min (kWh)</th>
+                <th style="padding: 1rem; text-align: right">Max (kWh)</th>
+                <th style="padding: 1rem; text-align: right">Écart-type</th>
+                <th style="padding: 1rem; text-align: right">Soumissions</th>
+              </tr>
+            </thead>
+            <tbody id="statsTable">
+              <tr>
+                <td
+                  colspan="7"
+                  style="text-align: center; padding: 2rem; color: #64748b"
+                >
+                  Chargement...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer style="margin-top: 4rem">
+      <div class="footer-container">
+        <div class="footer-section">
+          <h4>À propos</h4>
+          <p style="font-size: 0.875rem; color: var(--muted-fg)">
+            ÉnergieData Cameroun est une plateforme nationale de collecte et
+            d'analyse des données de consommation électrique.
+          </p>
+        </div>
+        <div class="footer-section">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="/">Accueil</a></li>
+            <li><a href="/submit">Soumettre</a></li>
+            <li><a href="/dashboard">Tableau de bord</a></li>
+            <li><a href="/data">Données</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Ressources</h4>
+          <ul>
+            <li><a href="/analytics">Analyses</a></li>
+            <li><a href="/regions">Besoins régionaux</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Code source</h4>
+          <ul>
+            <li>
+              <a
+                href="https://github.com/NOVA-X-Code/TP-INF232-EC2.git"
+                target="_blank"
+                rel="noopener noreferrer"
+                >📁 Repo GitHub</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 ÉnergieData Cameroun. Tous les droits réservés.</p>
+      </div>
+    </footer>
+
+    <script>
+      async function loadAnalytics() {
+        try {
+          // Load trends
+          const trendsResponse = await fetch("/api/consumption/monthly-trends");
+          const trends = await trendsResponse.json();
+
+          const trendLabels = trends.map((t) => t.label);
+          const trendData = trends.map((t) => Math.round(t.avg_kwh));
+
+          new Chart(document.getElementById("trendsChart"), {
+            type: "line",
+            data: {
+              labels: trendLabels,
+              datasets: [
+                {
+                  label: "Consommation moyenne (kWh)",
+                  data: trendData,
+                  borderColor: "#0f1e3d",
+                  backgroundColor: "rgba(15, 30, 61, 0.05)",
+                  tension: 0.4,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: true },
+              },
+              scales: {
+                y: { beginAtZero: true },
+              },
+            },
+          });
+
+          // Load simple regression
+          const regressionResponse = await fetch(
+            "/api/analysis/regression-simple",
+          );
+          const regressionData = await regressionResponse.json();
+
+          if (!regressionData.error) {
+            // Display regression results
+            document.getElementById("equation").textContent =
+              regressionData.equation;
+            document.getElementById("slope").textContent =
+              regressionData.slope.toFixed(4);
+            document.getElementById("intercept").textContent =
+              regressionData.intercept.toFixed(2);
+            document.getElementById("r_squared").textContent =
+              (regressionData.r_squared * 100).toFixed(2) + "%";
+
+            // Store regression data globally for predictions
+            window.regressionData = regressionData;
+
+            // Hide loading, show results
+            document.getElementById("regressionLoadingBox").style.display =
+              "none";
+            document.getElementById("equationBox").style.display = "block";
+            document.getElementById("regressionMetricsBox").style.display =
+              "block";
+            document.getElementById("predictionBoxSimple").style.display =
+              "block";
+
+            // Create regression chart
+            new Chart(document.getElementById("regressionChart"), {
+              type: "scatter",
+              data: {
+                datasets: [
+                  {
+                    label: "Ligne de régression",
+                    data: [
+                      { x: 1, y: regressionData.intercept },
+                      {
+                        x: 5,
+                        y: regressionData.intercept + 5 * regressionData.slope,
+                      },
+                    ],
+                    borderColor: "#0f1e3d",
+                    backgroundColor: "rgba(15, 30, 61, 0.1)",
+                    showLine: true,
+                    fill: false,
+                    tension: 0,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: true },
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: "Taille du ménage (personnes)",
+                    },
+                  },
+                  y: {
+                    title: { display: true, text: "Consommation (kWh)" },
+                  },
+                },
+              },
+            });
+          }
+
+          // Load region stats
+          const statsResponse = await fetch("/api/consumption/stats-by-region");
+          const stats = await statsResponse.json();
+
+          const tbody = document.getElementById("statsTable");
+          tbody.innerHTML = "";
+
+          stats.forEach((stat) => {
+            const row = `<tr style="border-bottom: 1px solid #e2e8f0;">
+                        <td style="padding: 1rem; font-weight: 600;">${stat.region}</td>
+                        <td style="padding: 1rem; text-align: right;">${Math.round(stat.avg_kwh)}</td>
+                        <td style="padding: 1rem; text-align: right;">${Math.round(stat.median_kwh)}</td>
+                        <td style="padding: 1rem; text-align: right;">${Math.round(stat.min_kwh)}</td>
+                        <td style="padding: 1rem; text-align: right;">${Math.round(stat.max_kwh)}</td>
+                        <td style="padding: 1rem; text-align: right;">${Math.round(stat.std_dev_kwh)}</td>
+                        <td style="padding: 1rem; text-align: right;">${stat.count}</td>
+                    </tr>`;
+            tbody.innerHTML += row;
+          });
+        } catch (error) {
+          console.error("Error loading analytics:", error);
+        }
+      }
+
+      loadAnalytics();
+
+      // Fonction de prédiction pour régression simple
+      function predictSimple() {
+        if (!window.regressionData) return;
+
+        const householdSize =
+          parseFloat(document.getElementById("householdSizeInput").value) || 0;
+
+        if (householdSize <= 0) {
+          document.getElementById("predictionResultSimple").innerHTML = "";
+          return;
+        }
+
+        const predicted =
+          window.regressionData.intercept +
+          window.regressionData.slope * householdSize;
+
+        const resultHTML = `
+          <div class="prediction-result">
+            <div class="prediction-value">${predicted.toFixed(2)}</div>
+            <div class="prediction-label">Consommation estimée (kWh)</div>
+          </div>
+        `;
+
+        document.getElementById("predictionResultSimple").innerHTML =
+          resultHTML;
+      }
+    </script>
+  </body>
+</html>

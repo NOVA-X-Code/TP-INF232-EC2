@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Besoins régionaux — ÉnergieData Cameroun</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .regions-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+      }
+
+      .chart-container {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .chart-wrapper {
+        position: relative;
+        height: 400px;
+        margin-bottom: 1rem;
+      }
+
+      .needs-table {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        overflow: hidden;
+      }
+
+      .needs-table table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .needs-table th {
+        background: #f8fafc;
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.875rem;
+        border-bottom: 2px solid #e2e8f0;
+      }
+
+      .needs-table td {
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.875rem;
+      }
+
+      .needs-table tr:hover {
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="header-container">
+        <div class="logo">
+          <div class="logo-icon">⚡</div>
+          <div class="logo-text">
+            <strong>Énergie<span>Data</span></strong>
+            <small>Cameroun</small>
+          </div>
+        </div>
+        <nav>
+          <a href="/">Accueil</a>
+          <a href="/submit">Soumettre</a>
+          <a href="/dashboard">Tableau de bord</a>
+          <a href="/data">Données</a>
+          <a href="/analytics">Analyses</a>
+          <a href="/regions" class="active">Besoins régionaux</a>
+        </nav>
+        <button class="mobile-menu-btn">☰</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="regions-container">
+      <h1>Estimation des besoins énergétiques par région</h1>
+      <p style="color: #64748b; margin-bottom: 2rem">
+        Projections des besoins énergétiques électriques basées sur les données
+        collectées et les estimations de population.
+      </p>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">
+          Besoins énergétiques annuels estimés (GWh)
+        </h3>
+        <div class="chart-wrapper">
+          <canvas id="needsChart"></canvas>
+        </div>
+      </div>
+
+      <div class="needs-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Région</th>
+              <th style="text-align: right">Consommation moyenne (kWh)</th>
+              <th style="text-align: right">Ménages estimés</th>
+              <th style="text-align: right">Besoin mensuel (MWh)</th>
+              <th style="text-align: right">Besoin annuel (GWh)</th>
+              <th style="text-align: right">Soumissions</th>
+            </tr>
+          </thead>
+          <tbody id="needsTable">
+            <tr>
+              <td
+                colspan="6"
+                style="text-align: center; padding: 2rem; color: #64748b"
+              >
+                Chargement...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer style="margin-top: 4rem">
+      <div class="footer-container">
+        <div class="footer-section">
+          <h4>À propos</h4>
+          <p style="font-size: 0.875rem; color: var(--muted-fg)">
+            ÉnergieData Cameroun est une plateforme nationale de collecte et
+            d'analyse des données de consommation électrique.
+          </p>
+        </div>
+        <div class="footer-section">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="/">Accueil</a></li>
+            <li><a href="/submit">Soumettre</a></li>
+            <li><a href="/dashboard">Tableau de bord</a></li>
+            <li><a href="/data">Données</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Ressources</h4>
+          <ul>
+            <li><a href="/analytics">Analyses</a></li>
+            <li><a href="/regions">Besoins régionaux</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Code source</h4>
+          <ul>
+            <li>
+              <a
+                href="https://github.com/NOVA-X-Code/TP-INF232-EC2.git"
+                target="_blank"
+                rel="noopener noreferrer"
+                >📁 Repo GitHub</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 ÉnergieData Cameroun. Tous les droits réservés.</p>
+      </div>
+    </footer>
+
+    <script>
+      async function loadRegionNeeds() {
+        try {
+          const response = await fetch("/api/consumption/region-needs");
+          const data = await response.json();
+
+          const labels = data.map((r) => r.region);
+          const needs = data.map((r) => r.estimated_annual_need_gwh);
+
+          new Chart(document.getElementById("needsChart"), {
+            type: "bar",
+            data: {
+              labels: labels,
+              datasets: [
+                {
+                  label: "Besoin annuel (GWh)",
+                  data: needs,
+                  backgroundColor: "#14b8a6",
+                  borderColor: "#0d9488",
+                  borderWidth: 1,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: true },
+              },
+              scales: {
+                y: { beginAtZero: true },
+              },
+            },
+          });
+
+          const tbody = document.getElementById("needsTable");
+          tbody.innerHTML = "";
+
+          data.forEach((region) => {
+            const row = `<tr>
+                        <td style="font-weight: 600;">${region.region}</td>
+                        <td style="text-align: right;">${Math.round(region.avg_monthly_kwh)}</td>
+                        <td style="text-align: right;">${region.estimated_households.toLocaleString("fr-FR")}</td>
+                        <td style="text-align: right;">${Math.round(region.estimated_monthly_need_mwh).toLocaleString("fr-FR")}</td>
+                        <td style="text-align: right; font-weight: 600; color: #0f1e3d;">${region.estimated_annual_need_gwh.toFixed(2)}</td>
+                        <td style="text-align: right;">${region.sample_count}</td>
+                    </tr>`;
+            tbody.innerHTML += row;
+          });
+        } catch (error) {
+          console.error("Error loading region needs:", error);
+          document.getElementById("needsTable").innerHTML =
+            '<tr><td colspan="6" style="text-align: center; color: red;">Erreur lors du chargement</td></tr>';
+        }
+      }
+
+      loadRegionNeeds();
+    </script>
+  </body>
+</html>

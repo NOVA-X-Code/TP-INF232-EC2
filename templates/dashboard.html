@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tableau de bord — ÉnergieData Cameroun</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .dashboard-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .stat-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0f1e3d;
+        margin: 0.5rem 0;
+      }
+
+      .stat-label {
+        font-size: 0.875rem;
+        color: #64748b;
+      }
+
+      .chart-container {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .chart-wrapper {
+        position: relative;
+        height: 400px;
+        margin-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <div class="header-container">
+        <div class="logo">
+          <div class="logo-icon">⚡</div>
+          <div class="logo-text">
+            <strong>Énergie<span>Data</span></strong>
+            <small>Cameroun</small>
+          </div>
+        </div>
+        <nav>
+          <a href="/">Accueil</a>
+          <a href="/submit">Soumettre</a>
+          <a href="/dashboard" class="active">Tableau de bord</a>
+          <a href="/data">Données</a>
+          <a href="/analytics">Analyses</a>
+          <a href="/regions">Besoins régionaux</a>
+        </nav>
+        <button class="mobile-menu-btn">☰</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="dashboard-container">
+      <h1>Tableau de bord analytique</h1>
+      <p style="color: #64748b; margin-bottom: 2rem">
+        Vue d'ensemble des statistiques nationales de consommation électrique.
+      </p>
+
+      <!-- National Stats -->
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+          <div class="stat-label">Soumissions totales</div>
+          <div class="stat-value" id="totalRecords">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Consommation totale (kWh)</div>
+          <div class="stat-value" id="totalKwh">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Consommation moyenne (kWh)</div>
+          <div class="stat-value" id="avgKwh">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Régions couvertes</div>
+          <div class="stat-value" id="regionsCount">0</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">Consommation par région</h3>
+        <div class="chart-wrapper">
+          <canvas id="regionChart"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 1.5rem">Distribution des consommations</h3>
+        <div class="chart-wrapper">
+          <canvas id="distributionChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer style="margin-top: 4rem">
+      <div class="footer-container">
+        <div class="footer-section">
+          <h4>À propos</h4>
+          <p style="font-size: 0.875rem; color: var(--muted-fg)">
+            ÉnergieData Cameroun est une plateforme nationale de collecte et
+            d'analyse des données de consommation électrique.
+          </p>
+        </div>
+        <div class="footer-section">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="/">Accueil</a></li>
+            <li><a href="/submit">Soumettre</a></li>
+            <li><a href="/dashboard">Tableau de bord</a></li>
+            <li><a href="/data">Données</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Ressources</h4>
+          <ul>
+            <li><a href="/analytics">Analyses</a></li>
+            <li><a href="/regions">Besoins régionaux</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Code source</h4>
+          <ul>
+            <li>
+              <a
+                href="https://github.com/NOVA-X-Code/TP-INF232-EC2.git"
+                target="_blank"
+                rel="noopener noreferrer"
+                >📁 Repo GitHub</a
+              >
+            </li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Code source</h4>
+          <ul>
+            <li>
+              <a
+                href="https://github.com/NOVA-X-Code/TP-INF232-EC2.git"
+                target="_blank"
+                rel="noopener noreferrer"
+                >📁 Repo GitHub</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 ÉnergieData Cameroun. Tous les droits réservés.</p>
+      </div>
+    </footer>
+
+    <script>
+      async function loadDashboard() {
+        try {
+          // Load national stats
+          const statsResponse = await fetch("/api/consumption/national-stats");
+          const stats = await statsResponse.json();
+
+          document.getElementById("totalRecords").textContent =
+            stats.total_records.toLocaleString("fr-FR");
+          document.getElementById("totalKwh").textContent = Math.round(
+            stats.total_kwh,
+          ).toLocaleString("fr-FR");
+          document.getElementById("avgKwh").textContent = Math.round(
+            stats.avg_kwh,
+          ).toLocaleString("fr-FR");
+          document.getElementById("regionsCount").textContent =
+            stats.regions_count;
+
+          // Load region stats
+          const regionResponse = await fetch(
+            "/api/consumption/stats-by-region",
+          );
+          const regionStats = await regionResponse.json();
+
+          const regionLabels = regionStats.map((r) => r.region);
+          const regionKwh = regionStats.map((r) => Math.round(r.avg_kwh));
+
+          new Chart(document.getElementById("regionChart"), {
+            type: "bar",
+            data: {
+              labels: regionLabels,
+              datasets: [
+                {
+                  label: "Consommation moyenne (kWh)",
+                  data: regionKwh,
+                  backgroundColor: "#f59e0b",
+                  borderColor: "#d97706",
+                  borderWidth: 1,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: true },
+              },
+              scales: {
+                y: { beginAtZero: true },
+              },
+            },
+          });
+
+          // Load distribution
+          const distResponse = await fetch("/api/consumption/distribution");
+          const distribution = await distResponse.json();
+
+          const distLabels = distribution.map((d) => d.bucket);
+          const distCounts = distribution.map((d) => d.count);
+
+          new Chart(document.getElementById("distributionChart"), {
+            type: "doughnut",
+            data: {
+              labels: distLabels,
+              datasets: [
+                {
+                  data: distCounts,
+                  backgroundColor: [
+                    "#0f1e3d",
+                    "#1a2e52",
+                    "#2a3f66",
+                    "#3a5080",
+                    "#f59e0b",
+                    "#fbbf24",
+                  ],
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: "bottom" },
+              },
+            },
+          });
+        } catch (error) {
+          console.error("Error loading dashboard:", error);
+        }
+      }
+
+      loadDashboard();
+    </script>
+  </body>
+</html>
