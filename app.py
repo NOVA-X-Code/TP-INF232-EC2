@@ -1,5 +1,5 @@
 """
-ÉnergieData Cameroun - Application Flask
+ÉnergieData Cameroun - Application web python Flask
 Plateforme de collecte et d'analyse des données de consommation électrique
 """
 
@@ -31,8 +31,22 @@ from datetime import datetime
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 app = Flask(__name__)
+# Récupération des variables d'environnement (pour Render/Turso)
+TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
+TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
+
+# Construction de l'URL de connexion dynamique
+if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+    # On transforme l'URL "libsql://" en "sqlite+libsql://" pour SQLAlchemy
+    # Et on injecte le Token d'authentification
+    base_url = TURSO_DATABASE_URL.replace("libsql://", "")
+    db_url = f"sqlite+libsql://{base_url}?auth_token={TURSO_AUTH_TOKEN}"
+else:
+    # Mode de secours : fichier local si les variables ne sont pas définies
+    db_url = 'sqlite:///energie_cameroun.db'
+
 # Use SQLite for this Flask app (ignore system DATABASE_URL)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///energie_cameroun.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JSON_SORT_KEYS'] = False
 
