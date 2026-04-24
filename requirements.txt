@@ -11,5 +11,5 @@ pandas
 matplotlib
 seaborn==0.13.0
 reportlab==4.0.7
-libsql-client 
 sqlalchemy-libsql
+psycopg2-binary
