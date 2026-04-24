@@ -31,22 +31,21 @@ from datetime import datetime
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-# Récupération des variables d'environnement (pour Render/Turso)
-TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
-TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
+# Render fournit souvent DATABASE_URL, ou utilisez votre propre variable
 
-if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
-    # Convert libsql:// → sqlite+libsql://
-    db_url = TURSO_DATABASE_URL.replace("libsql://", "sqlite+libsql://") + f"?authToken={TURSO_AUTH_TOKEN}"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 else:
-    db_url = "sqlite:///energie_cameroun.db"
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///local.db"
 
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Use SQLite for this Flask app (ignore system DATABASE_URL)
-app.config['JSON_SORT_KEYS'] = False
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
+
+with app.app_context():
+    db.create_all()
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -1068,8 +1067,8 @@ def server_error(error):
 # ─── Main ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    #with app.app_context():
-        #db.create_all()
+    with app.app_context():
+        db.create_all()
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_ENV') == 'production')
