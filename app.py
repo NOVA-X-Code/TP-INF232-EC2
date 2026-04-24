@@ -37,10 +37,8 @@ TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 
 # Construction de l'URL de connexion dynamique
 if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
-    # On transforme l'URL "libsql://" en "sqlite+libsql://" pour SQLAlchemy
-    # Et on injecte le Token d'authentification
-    base_url = TURSO_DATABASE_URL.replace("libsql://", "")
-    db_url = f"sqlite+libsql://{base_url}?auth_token={TURSO_AUTH_TOKEN}"
+    # Connexion à Turso via libsql avec authentification
+    db_url = f"{TURSO_DATABASE_URL}?authToken={TURSO_AUTH_TOKEN}"
 else:
     # Mode de secours : fichier local si les variables ne sont pas définies
     db_url = 'sqlite:///energie_cameroun.db'
