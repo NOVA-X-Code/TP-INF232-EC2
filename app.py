@@ -1,14 +1,13 @@
 """
 ÉnergieData Cameroun - Application web python Flask
 Plateforme de collecte et d'analyse des données de consommation électrique
+Avec Supabase comme backend (sans SQLAlchemy)
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
 import statistics
-from decimal import Decimal
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
@@ -18,52 +17,35 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
 from io import BytesIO
-import base64
-import json
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from datetime import datetime
+from reportlab.lib.enums import TA_CENTER
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
-# Charger les variables d'environnement depuis .env (uniquement en développement)
+# Charger les variables d'environnement
 load_dotenv()
-
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-# Configuration de la base de données
-# Supporte: Supabase (PostgreSQL), Turso (SQLite via libsql), ou SQLite local
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
+app.config['JSON_SORT_KEYS'] = False
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# Configuration Supabase
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-if DATABASE_URL:
-    # Utiliser Supabase ou autre DB distante via DATABASE_URL
-    # Format Supabase: postgresql://user:password@host:5432/dbname
-    # Remplacer postgresql:// par postgresql+psycopg2:// pour SQLAlchemy
-    if DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-    
-    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+# Initialiser le client Supabase
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("✅ Connexion à Supabase établie")
 else:
-    # Fallback: SQLite local
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///energie_cameroun.db"
-
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_pre_ping": True,
-    "pool_recycle": 3600,
-    "connect_args": {
-        "connect_timeout": 30,
-    } if "postgresql" in app.config["SQLALCHEMY_DATABASE_URI"] else {}
-}
-
-db = SQLAlchemy(app)
-
+    print("⚠️  Supabase non configuré")
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -81,35 +63,6 @@ MONTHS = {
 TARIFF_THRESHOLD = 110
 TARIFF_LOW = 50
 TARIFF_HIGH = 79
-
-# ─── Database Models ───────────────────────────────────────────────────────
-
-class ConsumptionRecord(db.Model):
-    __tablename__ = 'consumption_records'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    region = db.Column(db.String(64), nullable=False, index=True)
-    month = db.Column(db.Integer, nullable=False)
-    year = db.Column(db.Integer, nullable=False)
-    kwh = db.Column(db.Float, nullable=False)
-    bill_amount = db.Column(db.Float, nullable=False)
-    household_size = db.Column(db.Integer, nullable=False)
-    submitter_name = db.Column(db.String(255), default="Anonyme")
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'region': self.region,
-            'month': self.month,
-            'month_name': MONTHS.get(self.month, str(self.month)),
-            'year': self.year,
-            'kwh': self.kwh,
-            'bill_amount': self.bill_amount,
-            'household_size': self.household_size,
-            'submitter_name': self.submitter_name,
-            'created_at': self.created_at.isoformat(),
-        }
 
 # ─── Utility Functions ─────────────────────────────────────────────────────
 
@@ -145,8 +98,8 @@ def calculate_stats(records):
             'avg_bill': 0,
         }
     
-    kwh_values = [r.kwh for r in records]
-    bill_values = [r.bill_amount for r in records]
+    kwh_values = [r.get('kwh', 0) for r in records]
+    bill_values = [r.get('bill_amount', 0) for r in records]
     
     return {
         'count': len(records),
@@ -196,27 +149,34 @@ def submit():
             # Calculate bill
             bill_amount = calculate_bill(kwh)
             
-            # Save to database
-            record = ConsumptionRecord(
-                region=region,
-                month=month,
-                year=year,
-                kwh=kwh,
-                bill_amount=bill_amount,
-                household_size=household_size,
-                submitter_name=submitter_name or 'Anonyme'
-            )
-            db.session.add(record)
-            db.session.commit()
+            # Save to Supabase
+            if not supabase:
+                return jsonify({'error': 'Base de données non configurée'}), 500
             
-            return jsonify({
-                'success': True,
-                'id': record.id,
+            record_data = {
+                'region': region,
+                'month': month,
+                'year': year,
+                'kwh': kwh,
                 'bill_amount': bill_amount,
-                'message': 'Consommation soumise avec succès!'
-            }), 201
+                'household_size': household_size,
+                'submitter_name': submitter_name or 'Anonyme',
+                'created_at': datetime.utcnow().isoformat()
+            }
+            
+            result = supabase.table('consumption_records').insert(record_data).execute()
+            
+            if result.data:
+                return jsonify({
+                    'success': True,
+                    'id': result.data[0].get('id'),
+                    'bill_amount': bill_amount,
+                    'message': 'Consommation soumise avec succès!'
+                }), 201
+            else:
+                return jsonify({'error': 'Erreur lors de la sauvegarde'}), 500
+                
         except Exception as e:
-            db.session.rollback()
             return jsonify({'error': str(e)}), 400
     
     return render_template('submit.html', regions=REGIONS, months=MONTHS)
@@ -260,26 +220,48 @@ def api_preview_bill():
 def api_list_consumption():
     """List consumption records with filters."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         region = request.args.get('region')
         month = request.args.get('month', type=int)
         year = request.args.get('year', type=int)
         limit = request.args.get('limit', 500, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        query = ConsumptionRecord.query
+        query = supabase.table('consumption_records').select('*')
         
         if region:
-            query = query.filter_by(region=region)
+            query = query.eq('region', region)
         if month:
-            query = query.filter_by(month=month)
+            query = query.eq('month', month)
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
         
-        total = query.count()
-        records = query.order_by(ConsumptionRecord.created_at.desc()).limit(limit).offset(offset).all()
+        # Get total count
+        count_result = query.execute()
+        total = len(count_result.data) if count_result.data else 0
+        
+        # Get paginated results
+        result = query.range(offset, offset + limit - 1).order('created_at', desc=True).execute()
+        
+        records = []
+        for r in (result.data or []):
+            records.append({
+                'id': r.get('id'),
+                'region': r.get('region'),
+                'month': r.get('month'),
+                'month_name': MONTHS.get(r.get('month'), str(r.get('month'))),
+                'year': r.get('year'),
+                'kwh': r.get('kwh'),
+                'bill_amount': r.get('bill_amount'),
+                'household_size': r.get('household_size'),
+                'submitter_name': r.get('submitter_name', 'Anonyme'),
+                'created_at': r.get('created_at'),
+            })
         
         return jsonify({
-            'records': [r.to_dict() for r in records],
+            'records': records,
             'total': total
         })
     except Exception as e:
@@ -289,15 +271,22 @@ def api_list_consumption():
 def api_stats_by_region():
     """Statistics by region."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         year = request.args.get('year', type=int)
         
-        query = ConsumptionRecord.query
+        # Get all records
+        query = supabase.table('consumption_records').select('*')
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
+        
+        result = query.execute()
+        all_records = result.data or []
         
         stats_by_region = {}
         for region in REGIONS:
-            region_records = query.filter_by(region=region).all()
+            region_records = [r for r in all_records if r.get('region') == region]
             if region_records:
                 stats = calculate_stats(region_records)
                 stats['region'] = region
@@ -311,17 +300,20 @@ def api_stats_by_region():
 def api_national_stats():
     """National statistics."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         year = request.args.get('year', type=int)
         
-        query = ConsumptionRecord.query
+        query = supabase.table('consumption_records').select('*')
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
         
-        records = query.all()
+        result = query.execute()
+        records = result.data or []
+        
         stats = calculate_stats(records)
-        
-        # Count regions with data
-        regions_with_data = len(set(r.region for r in records))
+        regions_with_data = len(set(r.get('region') for r in records))
         
         return jsonify({
             'total_records': stats['count'],
@@ -338,38 +330,43 @@ def api_national_stats():
 def api_monthly_trends():
     """Monthly trends."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         region = request.args.get('region')
         
-        query = ConsumptionRecord.query
+        query = supabase.table('consumption_records').select('*')
         if region:
-            query = query.filter_by(region=region)
+            query = query.eq('region', region)
         
-        records = query.all()
+        result = query.execute()
+        records = result.data or []
         
         # Group by year-month
         trends = {}
         for record in records:
-            key = f"{record.year}-{record.month:02d}"
+            year = record.get('year')
+            month = record.get('month')
+            kwh = record.get('kwh')
+            key = f"{year}-{month:02d}"
             if key not in trends:
-                trends[key] = {'year': record.year, 'month': record.month, 'region': record.region, 'kwh_values': [], 'total_kwh': 0, 'count': 0}
-            trends[key]['kwh_values'].append(record.kwh)
-            trends[key]['total_kwh'] += record.kwh
+                trends[key] = {'year': year, 'month': month, 'total_kwh': 0, 'count': 0}
+            trends[key]['total_kwh'] += kwh
             trends[key]['count'] += 1
         
-        result = []
+        result_list = []
         for key in sorted(trends.keys()):
             t = trends[key]
-            result.append({
+            result_list.append({
                 'year': t['year'],
                 'month': t['month'],
-                'region': t['region'],
                 'label': f"{MONTHS[t['month']]} {t['year']}",
                 'avg_kwh': t['total_kwh'] / t['count'] if t['count'] > 0 else 0,
                 'total_kwh': t['total_kwh'],
                 'count': t['count'],
             })
         
-        return jsonify(result)
+        return jsonify(result_list)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -377,13 +374,17 @@ def api_monthly_trends():
 def api_distribution():
     """Distribution histogram."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         region = request.args.get('region')
         
-        query = ConsumptionRecord.query
+        query = supabase.table('consumption_records').select('*')
         if region:
-            query = query.filter_by(region=region)
+            query = query.eq('region', region)
         
-        records = query.all()
+        result = query.execute()
+        records = result.data or []
         
         buckets = {
             "0-50": 0,
@@ -395,7 +396,7 @@ def api_distribution():
         }
         
         for record in records:
-            kwh = record.kwh
+            kwh = record.get('kwh', 0)
             if kwh <= 50:
                 buckets["0-50"] += 1
             elif kwh <= 110:
@@ -417,11 +418,17 @@ def api_distribution():
 def api_region_needs():
     """Regional energy needs estimation."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         year = request.args.get('year', type=int)
         
-        query = ConsumptionRecord.query
+        query = supabase.table('consumption_records').select('*')
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
+        
+        result = query.execute()
+        all_records = result.data or []
         
         # Estimated households per region (BUCREP approximation)
         households_per_region = {
@@ -430,16 +437,16 @@ def api_region_needs():
             "Nord-Ouest": 750000, "Ouest": 900000, "Sud": 280000, "Sud-Ouest": 420000,
         }
         
-        result = []
+        result_list = []
         for region in REGIONS:
-            region_records = query.filter_by(region=region).all()
+            region_records = [r for r in all_records if r.get('region') == region]
             if region_records:
                 stats = calculate_stats(region_records)
                 households = households_per_region.get(region, 500000)
                 monthly_need_mwh = (stats['avg_kwh'] * households) / 1000
                 annual_need_gwh = (monthly_need_mwh * 12) / 1000
                 
-                result.append({
+                result_list.append({
                     'region': region,
                     'avg_monthly_kwh': stats['avg_kwh'],
                     'sample_count': stats['count'],
@@ -448,7 +455,7 @@ def api_region_needs():
                     'estimated_annual_need_gwh': annual_need_gwh,
                 })
         
-        return jsonify(result)
+        return jsonify(result_list)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -456,49 +463,64 @@ def api_region_needs():
 def api_export_csv():
     """Export data as CSV."""
     try:
+        if not supabase:
+            return jsonify({'error': 'Base de données non disponible'}), 500
+        
         region = request.args.get('region')
         month = request.args.get('month', type=int)
         year = request.args.get('year', type=int)
         
-        query = ConsumptionRecord.query
+        query = supabase.table('consumption_records').select('*')
         if region:
-            query = query.filter_by(region=region)
+            query = query.eq('region', region)
         if month:
-            query = query.filter_by(month=month)
+            query = query.eq('month', month)
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
         
-        records = query.limit(10000).all()
+        result = query.limit(10000).execute()
+        records = result.data or []
         
         # Build CSV
         csv_lines = ["ID,Région,Période,kWh,Facture (FCFA),Ménage,Soumis par,Date"]
         for r in records:
-            period = f"{MONTHS[r.month]} {r.year}"
-            date = r.created_at.strftime("%Y-%m-%d")
-            csv_lines.append(f'{r.id},"{r.region}","{period}",{r.kwh},{int(r.bill_amount)},{r.household_size},"{r.submitter_name}","{date}"')
+            period = f"{MONTHS.get(r.get('month'), r.get('month'))} {r.get('year')}"
+            date = r.get('created_at', '')[:10] if r.get('created_at') else ''
+            csv_lines.append(f'{r.get("id")},"{r.get("region")}","{period}",{r.get("kwh")},{int(r.get("bill_amount", 0))},{r.get("household_size")},"{r.get("submitter_name", "Anonyme")}","{date}"')
         
         csv_content = '\n'.join(csv_lines)
         return jsonify({'csv': csv_content})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-# ─── Advanced Analysis Functions ──────────────────────────────────────────
+# ─── Helper function to get all records for ML ────────────────────────────
 
-def get_dataframe_from_records(records=None):
+def get_all_records_for_ml():
+    """Get all records as list of dicts for ML functions."""
+    if not supabase:
+        return []
+    
+    result = supabase.table('consumption_records').select('*').execute()
+    return result.data or []
+
+def get_dataframe_from_records():
     """Convert consumption records to pandas DataFrame."""
-    if records is None:
-        records = ConsumptionRecord.query.all()
+    records = get_all_records_for_ml()
+    if not records:
+        return pd.DataFrame()
     
     data = [{
-        'region': r.region,
-        'kwh': r.kwh,
-        'month': r.month,
-        'year': r.year,
-        'household_size': r.household_size,
-        'bill_amount': r.bill_amount
+        'region': r.get('region'),
+        'kwh': r.get('kwh'),
+        'month': r.get('month'),
+        'year': r.get('year'),
+        'household_size': r.get('household_size'),
+        'bill_amount': r.get('bill_amount')
     } for r in records]
     
-    return pd.DataFrame(data) if data else pd.DataFrame()
+    return pd.DataFrame(data)
+
+# ─── Advanced Analysis Functions ──────────────────────────────────────────
 
 def regression_simple():
     """Simple linear regression: consumption vs household size."""
@@ -613,7 +635,6 @@ def clustering_analysis():
     
     region_stats.columns = ['region', 'kwh_mean', 'kwh_std', 'household_mean']
     
-    # Use only mean and std for clustering (more representative of profile)
     X = region_stats[['kwh_mean', 'kwh_std']].values
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -630,7 +651,7 @@ def clustering_analysis():
             'std_kwh': float(region_stats.iloc[i]['kwh_std'])
         })
     
-    # Sort clusters by average consumption (low to high) for logical ordering
+    # Sort clusters by average consumption
     cluster_means = {}
     for item in result:
         cluster_id = item['cluster']
@@ -638,18 +659,26 @@ def clustering_analysis():
             cluster_means[cluster_id] = []
         cluster_means[cluster_id].append(item['avg_kwh'])
     
-    # Calculate mean consumption per cluster
     cluster_avg = {cid: np.mean(values) for cid, values in cluster_means.items()}
-    
-    # Create mapping: old cluster id -> new sorted cluster id (0=low, 1=medium, 2=high)
     sorted_clusters = sorted(cluster_avg.items(), key=lambda x: x[1])
     cluster_mapping = {old_id: new_id for new_id, (old_id, _) in enumerate(sorted_clusters)}
     
-    # Apply mapping to results for logical ordering
     for item in result:
         item['cluster'] = cluster_mapping[item['cluster']]
     
-    return result
+    # Build regions_by_cluster dictionary
+    regions_by_cluster = {}
+    for item in result:
+        cluster_id = item['cluster']
+        if cluster_id not in regions_by_cluster:
+            regions_by_cluster[cluster_id] = []
+        regions_by_cluster[cluster_id].append(item['region'])
+    
+    return {
+        'clusters': result,
+        'n_clusters': 3,
+        'regions_by_cluster': regions_by_cluster
+    }
 
 def advanced_stats():
     """Calculate advanced descriptive statistics."""
@@ -658,15 +687,18 @@ def advanced_stats():
         return None
     
     kwh_data = df['kwh'].values
+    bill_data = df['bill_amount'].values
     
     return {
         'count': int(len(kwh_data)),
-        'mean': float(np.mean(kwh_data)),
-        'median': float(np.median(kwh_data)),
-        'std_dev': float(np.std(kwh_data)),
+        'total_kwh': float(np.sum(kwh_data)),
+        'total_bill': float(np.sum(bill_data)),
+        'avg_kwh': float(np.mean(kwh_data)),
+        'median_kwh': float(np.median(kwh_data)),
+        'std_dev_kwh': float(np.std(kwh_data)),
         'variance': float(np.var(kwh_data)),
-        'min': float(np.min(kwh_data)),
-        'max': float(np.max(kwh_data)),
+        'min_kwh': float(np.min(kwh_data)),
+        'max_kwh': float(np.max(kwh_data)),
         'q1': float(np.percentile(kwh_data, 25)),
         'q3': float(np.percentile(kwh_data, 75)),
         'iqr': float(np.percentile(kwh_data, 75) - np.percentile(kwh_data, 25)),
@@ -682,7 +714,6 @@ def anova_test():
     
     groups = [group['kwh'].values for name, group in df.groupby('region')]
     
-    # Need at least 2 groups with data
     if len(groups) < 2 or any(len(g) == 0 for g in groups):
         return None
     
@@ -713,9 +744,7 @@ def correlation_matrix():
         'matrix': corr.values.tolist()
     }
 
-# ─── Error Handlers ────────────────────────────────────────────────────────
-
-# ─── PDF Generation Function ────────────────────────────────────────────────────────
+# ─── PDF Generation Function ──────────────────────────────────────────────
 
 def generate_analysis_pdf(analysis_type):
     """Generate comprehensive PDF report for all analyses."""
@@ -743,15 +772,6 @@ def generate_analysis_pdf(analysis_type):
         spaceBefore=12
     )
     
-    subheading_style = ParagraphStyle(
-        'CustomSubHeading',
-        parent=styles['Heading3'],
-        fontSize=11,
-        textColor=colors.HexColor('#2c3e50'),
-        spaceAfter=8,
-        spaceBefore=8
-    )
-    
     # Title Page
     story.append(Paragraph('Rapport Complet d\'Analyse', title_style))
     story.append(Paragraph('ÉnergieData Cameroun', styles['Normal']))
@@ -759,18 +779,7 @@ def generate_analysis_pdf(analysis_type):
     story.append(Paragraph(f'Généré le {datetime.now().strftime("%d/%m/%Y %H:%M")}<br/><br/>', styles['Normal']))
     story.append(Spacer(1, 0.3*inch))
     
-    # Table of Contents
-    story.append(Paragraph('Table des matières', heading_style))
-    story.append(Paragraph('1. Statistiques Descriptives Avancées', styles['Normal']))
-    story.append(Paragraph('2. Régression Linéaire Simple', styles['Normal']))
-    story.append(Paragraph('3. Régression Linéaire Multiple', styles['Normal']))
-    story.append(Paragraph('4. Test ANOVA', styles['Normal']))
-    story.append(Paragraph('5. Classification Supervisée', styles['Normal']))
-    story.append(Paragraph('6. Clustering K-means', styles['Normal']))
-    story.append(Paragraph('7. Matrice de Corrélation', styles['Normal']))
-    story.append(PageBreak())
-    
-    # 1. Statistiques Descriptives Avancées
+    # 1. Advanced Statistics
     story.append(Paragraph('1. Statistiques Descriptives Avancées', heading_style))
     data = advanced_stats()
     if data:
@@ -790,7 +799,7 @@ def generate_analysis_pdf(analysis_type):
             if key in data:
                 value = data[key]
                 if isinstance(value, float):
-                    table_data.append([label, f'{value:.4f}'])
+                    table_data.append([label, f'{value:.2f}'])
                 else:
                     table_data.append([label, str(value)])
         
@@ -809,155 +818,38 @@ def generate_analysis_pdf(analysis_type):
         story.append(t)
     story.append(Spacer(1, 0.3*inch))
     
-    # 2. Régression Linéaire Simple
+    # 2. Simple Linear Regression
     story.append(Paragraph('2. Régression Linéaire Simple', heading_style))
-    story.append(Paragraph('Relation entre la taille du ménage et la consommation électrique', styles['Normal']))
     simple_reg = regression_simple()
     if simple_reg:
         story.append(Paragraph(f'<b>Équation:</b> {simple_reg["equation"]}', styles['Normal']))
         story.append(Spacer(1, 0.1*inch))
         
         table_data = [['Paramètre', 'Valeur', 'Interprétation']]
-        table_data.append(['Pente', f'{simple_reg["slope"]:.4f}', 'Variation de consommation par personne (kWh)'])
-        table_data.append(['Ordonnée à l\'origine', f'{simple_reg["intercept"]:.2f}', 'Consommation de base estimée (kWh)'])
-        table_data.append(['R² (coefficient de détermination)', f'{simple_reg["r_squared"]*100:.2f}%', 'Variance expliquée par le modèle'])
+        table_data.append(['Pente', f'{simple_reg["slope"]:.4f}', 'Variation de consommation par personne'])
+        table_data.append(['R²', f'{simple_reg["r_squared"]*100:.2f}%', 'Variance expliquée'])
         
         t = Table(table_data, colWidths=[2*inch, 1.2*inch, 2.3*inch])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f59e0b')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fef3c7')),
             ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#f59e0b'))
         ]))
         story.append(t)
     story.append(Spacer(1, 0.3*inch))
     
-    # 3. Régression Linéaire Multiple
-    story.append(Paragraph('3. Régression Linéaire Multiple', heading_style))
-    story.append(Paragraph('Modèle prédictif : kWh = f(région, mois, taille ménage)', styles['Normal']))
-    multi_reg = regression_multiple()
-    if multi_reg:
-        story.append(Paragraph(f'<b>R² = {multi_reg["r_squared"]*100:.2f}%</b> (Variance expliquée)', styles['Normal']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        table_data = [['Variable', 'Coefficient', 'Interprétation']]
-        table_data.append(['Région', f'{multi_reg["coefficients"]["region"]:.4f}', 'Impact de la région'])
-        table_data.append(['Mois', f'{multi_reg["coefficients"]["month"]:.4f}', 'Impact du mois/saison'])
-        table_data.append(['Taille ménage', f'{multi_reg["coefficients"]["household_size"]:.4f}', 'Impact par personne'])
-        table_data.append(['Ordonnée à l\'origine', f'{multi_reg["intercept"]:.2f}', 'Consommation de base'])
-        
-        t = Table(table_data, colWidths=[2*inch, 1.2*inch, 2.3*inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#dbeafe')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#3b82f6'))
-        ]))
-        story.append(t)
-    story.append(Spacer(1, 0.3*inch))
-    
-    # 4. Test ANOVA
-    story.append(Paragraph('4. Test ANOVA', heading_style))
-    story.append(Paragraph('Comparaison de la consommation entre régions (test d\'hypothèse)', styles['Normal']))
-    anova = anova_test()
-    if anova:
-        table_data = [['Métrique', 'Valeur', 'Interprétation']]
-        table_data.append(['Statistique F', f'{anova["f_statistic"]:.4f}', 'Ratio variance inter/intra groupes'])
-        table_data.append(['P-value', f'{anova["p_value"]:.6f}', 'Probabilité de l\'hypothèse nulle'])
-        table_data.append(['Significatif (α=0.05)', 'Oui' if anova['significant'] else 'Non', 'Rejet de H₀' if anova['significant'] else 'Acceptation de H₀'])
-        
-        interpretation = 'Les différences de consommation entre régions sont statistiquement significatives.' if anova['significant'] else 'Les différences de consommation entre régions ne sont pas statistiquement significatives.'
-        
-        t = Table(table_data, colWidths=[2*inch, 1.2*inch, 2.3*inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8b5cf6')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ede9fe')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#8b5cf6'))
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 0.1*inch))
-        story.append(Paragraph(f'<b>Conclusion:</b> {interpretation}', styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # 5. Classification
-    story.append(Paragraph('5. Classification Supervisée', heading_style))
-    story.append(Paragraph('Prédiction de catégories de consommation (Faible/Moyen/Élevé)', styles['Normal']))
-    classification = classification_analysis()
-    if classification and 'accuracy' in classification:
-        table_data = [['Métrique', 'Valeur']]
-        table_data.append(['Précision (Accuracy)', f'{classification["accuracy"]*100:.2f}%'])
-        
-        t = Table(table_data, colWidths=[3.5*inch, 1.5*inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#10b981')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 11),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#d1fae5')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#10b981'))
-        ]))
-        story.append(t)
-    story.append(Spacer(1, 0.3*inch))
-    
-    # 6. Clustering
-    story.append(Paragraph('6. Clustering K-means', heading_style))
-    story.append(Paragraph('Regroupement des régions par profil énergétique', styles['Normal']))
+    # 3. Clustering
+    story.append(Paragraph('3. Clustering K-means', heading_style))
     clustering = clustering_analysis()
     if clustering and 'n_clusters' in clustering:
-        story.append(Paragraph(f'<b>Nombre de clusters identifiés:</b> {clustering["n_clusters"]}', styles['Normal']))
+        story.append(Paragraph(f'<b>Nombre de clusters:</b> {clustering["n_clusters"]}', styles['Normal']))
         story.append(Spacer(1, 0.1*inch))
-        if 'regions_by_cluster' in clustering:
-            for cluster_id, regions in clustering['regions_by_cluster'].items():
-                story.append(Paragraph(f'<b>Cluster {cluster_id}:</b> {", ".join(regions)}', styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
+        for cluster_id, regions in clustering.get('regions_by_cluster', {}).items():
+            story.append(Paragraph(f'<b>Cluster {cluster_id}:</b> {", ".join(regions)}', styles['Normal']))
     
-    # 7. Matrice de Corrélation
-    story.append(Paragraph('7. Matrice de Corrélation', heading_style))
-    story.append(Paragraph('Relations entre les variables principales', styles['Normal']))
-    corr = correlation_matrix()
-    if corr:
-        table_data = [[''] + corr['labels']]
-        for i, label in enumerate(corr['labels']):
-            row = [label]
-            for j in range(len(corr['labels'])):
-                value = corr['matrix'][i][j]
-                row.append(f'{value:.3f}')
-            table_data.append(row)
-        
-        t = Table(table_data, colWidths=[1.2*inch] * (len(corr['labels']) + 1))
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ef4444')),
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ef4444')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('BACKGROUND', (1, 1), (-1, -1), colors.HexColor('#fee2e2')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#ef4444'))
-        ]))
-        story.append(t)
-    
-    # Build PDF
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -1030,16 +922,6 @@ def api_advanced_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/analysis/anova', methods=['GET'])
-def api_anova():
-    """API endpoint for ANOVA test."""
-    try:
-        result = anova_test()
-        if result is None:
-            return jsonify({'error': 'Pas assez de données'}), 400
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
 
 @app.route('/api/analysis/correlation-matrix', methods=['GET'])
 def api_correlation():
@@ -1082,11 +964,11 @@ def not_found(error):
 def server_error(error):
     return render_template('500.html'), 500
 
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_ENV') == 'production')
+    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
