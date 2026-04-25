@@ -4,7 +4,7 @@ Plateforme de collecte et d'analyse des données de consommation électrique
 """
 
 from flask import Flask, render_template, request, jsonify, send_file, Response
-from supabase import create_client, Client
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
 import statistics
@@ -26,31 +26,38 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from dotenv import load_dotenv
-
-# ─── Load Environment Variables ─────────────────────────────────────────────
-
-load_dotenv()
+from datetime import datetime
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 app = Flask(__name__)
+# Configuration de la base de données
+# Supporte: Supabase (PostgreSQL), Turso (SQLite via libsql), ou SQLite local
 
-# Initialize Supabase Client
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-supabase: Client = None
-
-if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Supabase client initialized")
-    except Exception as e:
-        print(f"⚠️  Warning: Could not initialize Supabase: {str(e)}")
-        print("    Make sure SUPABASE_URL and SUPABASE_KEY are correct in .env")
+if DATABASE_URL:
+    # Utiliser Supabase ou autre DB distante via DATABASE_URL
+    # Format Supabase: postgresql://user:password@host:5432/dbname
+    # Remplacer postgresql:// par postgresql+psycopg2:// pour SQLAlchemy
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 else:
-    raise ValueError("❌ SUPABASE_URL and SUPABASE_KEY environment variables are required!")
+    # Fallback: SQLite local
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///energie_cameroun.db"
+
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 3600,
+    "connect_args": {
+        "connect_timeout": 30,
+    } if "postgresql" in app.config["SQLALCHEMY_DATABASE_URI"] else {}
+}
+
+db = SQLAlchemy(app)
 
 # ─── Health Check & Diagnostics ───────────────────────────────────────────
 
@@ -58,8 +65,8 @@ else:
 def health():
     """Health check endpoint for monitoring."""
     try:
-        # Test Supabase connection
-        response = supabase.table('consumption_records').select('id', count='exact').limit(1).execute()
+        # Test database connection
+        db.session.execute('SELECT 1')
         db_status = 'connected'
     except Exception as e:
         db_status = f'disconnected: {str(e)}'
@@ -67,7 +74,7 @@ def health():
     return jsonify({
         'status': 'healthy' if db_status == 'connected' else 'unhealthy',
         'database': db_status,
-        'database_url': SUPABASE_URL[:50] + '...'
+        'database_url': app.config['SQLALCHEMY_DATABASE_URI'][:50] + '...' if len(app.config['SQLALCHEMY_DATABASE_URI']) > 50 else app.config['SQLALCHEMY_DATABASE_URI']
     }), 200 if db_status == 'connected' else 503
 
 # ─── Constants ─────────────────────────────────────────────────────────────
@@ -86,6 +93,35 @@ MONTHS = {
 TARIFF_THRESHOLD = 110
 TARIFF_LOW = 50
 TARIFF_HIGH = 79
+
+# ─── Database Models ───────────────────────────────────────────────────────
+
+class ConsumptionRecord(db.Model):
+    __tablename__ = 'consumption_records'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    region = db.Column(db.String(64), nullable=False, index=True)
+    month = db.Column(db.Integer, nullable=False)
+    year = db.Column(db.Integer, nullable=False)
+    kwh = db.Column(db.Float, nullable=False)
+    bill_amount = db.Column(db.Float, nullable=False)
+    household_size = db.Column(db.Integer, nullable=False)
+    submitter_name = db.Column(db.String(255), default="Anonyme")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'region': self.region,
+            'month': self.month,
+            'month_name': MONTHS.get(self.month, str(self.month)),
+            'year': self.year,
+            'kwh': self.kwh,
+            'bill_amount': self.bill_amount,
+            'household_size': self.household_size,
+            'submitter_name': self.submitter_name,
+            'created_at': self.created_at.isoformat(),
+        }
 
 # ─── Utility Functions ─────────────────────────────────────────────────────
 
@@ -121,8 +157,8 @@ def calculate_stats(records):
             'avg_bill': 0,
         }
     
-    kwh_values = [r['kwh'] for r in records]
-    bill_values = [r['bill_amount'] for r in records]
+    kwh_values = [r.kwh for r in records]
+    bill_values = [r.bill_amount for r in records]
     
     return {
         'count': len(records),
@@ -180,31 +216,27 @@ def submit():
             # Calculate bill
             bill_amount = calculate_bill(kwh)
             
-            # Save to Supabase
-            response = supabase.table('consumption_records').insert({
-                'region': region,
-                'month': month,
-                'year': year,
-                'kwh': kwh,
-                'bill_amount': bill_amount,
-                'household_size': household_size,
-                'submitter_name': submitter_name or 'Anonyme',
-                'created_at': datetime.utcnow().isoformat()
-            }).execute()
+            # Save to database
+            record = ConsumptionRecord(
+                region=region,
+                month=month,
+                year=year,
+                kwh=kwh,
+                bill_amount=bill_amount,
+                household_size=household_size,
+                submitter_name=submitter_name or 'Anonyme'
+            )
+            db.session.add(record)
+            db.session.commit()
             
-            if response.data:
-                record_id = response.data[0]['id']
-                return jsonify({
-                    'success': True,
-                    'id': record_id,
-                    'bill_amount': bill_amount,
-                    'message': 'Consommation soumise avec succès!'
-                }), 201
-            else:
-                return jsonify({'error': 'Erreur lors de la sauvegarde'}), 400
-                
+            return jsonify({
+                'success': True,
+                'id': record.id,
+                'bill_amount': bill_amount,
+                'message': 'Consommation soumise avec succès!'
+            }), 201
         except Exception as e:
-            print(f"Error in submit: {str(e)}")
+            db.session.rollback()
             return jsonify({'error': str(e)}), 400
     
     return render_template('submit.html', regions=REGIONS, months=MONTHS)
@@ -254,34 +286,20 @@ def api_list_consumption():
         limit = request.args.get('limit', 500, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        # Build query
-        query = supabase.table('consumption_records').select('*')
+        query = ConsumptionRecord.query
         
         if region:
-            query = query.eq('region', region)
+            query = query.filter_by(region=region)
         if month:
-            query = query.eq('month', month)
+            query = query.filter_by(month=month)
         if year:
-            query = query.eq('year', year)
+            query = query.filter_by(year=year)
         
-        # Get total count
-        count_response = supabase.table('consumption_records').select('id', count='exact')
-        if region:
-            count_response = count_response.eq('region', region)
-        if month:
-            count_response = count_response.eq('month', month)
-        if year:
-            count_response = count_response.eq('year', year)
-        
-        total_count = count_response.execute()
-        total = total_count.count if hasattr(total_count, 'count') else 0
-        
-        # Get records
-        response = query.order('created_at', desc=True).range(offset, offset + limit - 1).execute()
-        records = response.data if response.data else []
+        total = query.count()
+        records = query.order_by(ConsumptionRecord.created_at.desc()).limit(limit).offset(offset).all()
         
         return jsonify({
-            'records': records,
+            'records': [r.to_dict() for r in records],
             'total': total
         })
     except Exception as e:
@@ -296,15 +314,13 @@ def api_stats_by_region():
     try:
         year = request.args.get('year', type=int)
         
+        query = ConsumptionRecord.query
+        if year:
+            query = query.filter_by(year=year)
+        
         stats_by_region = {}
         for region in REGIONS:
-            query = supabase.table('consumption_records').select('*').eq('region', region)
-            if year:
-                query = query.eq('year', year)
-            
-            response = query.execute()
-            region_records = response.data if response.data else []
-            
+            region_records = query.filter_by(region=region).all()
             if region_records:
                 stats = calculate_stats(region_records)
                 stats['region'] = region
@@ -320,16 +336,15 @@ def api_national_stats():
     try:
         year = request.args.get('year', type=int)
         
-        query = supabase.table('consumption_records').select('*')
+        query = ConsumptionRecord.query
         if year:
-            query = query.eq('year', year)
+            query = query.filter_by(year=year)
         
-        response = query.execute()
-        records = response.data if response.data else []
+        records = query.all()
         stats = calculate_stats(records)
         
         # Count regions with data
-        regions_with_data = len(set(r['region'] for r in records))
+        regions_with_data = len(set(r.region for r in records))
         
         return jsonify({
             'total_records': stats['count'],
@@ -351,21 +366,20 @@ def api_monthly_trends():
     try:
         region = request.args.get('region')
         
-        query = supabase.table('consumption_records').select('*')
+        query = ConsumptionRecord.query
         if region:
-            query = query.eq('region', region)
+            query = query.filter_by(region=region)
         
-        response = query.execute()
-        records = response.data if response.data else []
+        records = query.all()
         
         # Group by year-month
         trends = {}
         for record in records:
-            key = f"{record['year']}-{record['month']:02d}"
+            key = f"{record.year}-{record.month:02d}"
             if key not in trends:
-                trends[key] = {'year': record['year'], 'month': record['month'], 'region': record['region'], 'kwh_values': [], 'total_kwh': 0, 'count': 0}
-            trends[key]['kwh_values'].append(record['kwh'])
-            trends[key]['total_kwh'] += record['kwh']
+                trends[key] = {'year': record.year, 'month': record.month, 'region': record.region, 'kwh_values': [], 'total_kwh': 0, 'count': 0}
+            trends[key]['kwh_values'].append(record.kwh)
+            trends[key]['total_kwh'] += record.kwh
             trends[key]['count'] += 1
         
         result = []
@@ -391,12 +405,11 @@ def api_distribution():
     try:
         region = request.args.get('region')
         
-        query = supabase.table('consumption_records').select('*')
+        query = ConsumptionRecord.query
         if region:
-            query = query.eq('region', region)
+            query = query.filter_by(region=region)
         
-        response = query.execute()
-        records = response.data if response.data else []
+        records = query.all()
         
         buckets = {
             "0-50": 0,
@@ -408,7 +421,7 @@ def api_distribution():
         }
         
         for record in records:
-            kwh = record['kwh']
+            kwh = record.kwh
             if kwh <= 50:
                 buckets["0-50"] += 1
             elif kwh <= 110:
@@ -432,14 +445,11 @@ def api_region_needs():
     try:
         year = request.args.get('year', type=int)
         
-        query = supabase.table('consumption_records').select('*')
+        query = ConsumptionRecord.query
         if year:
-            query = query.eq('year', year)
+            query = query.filter_by(year=year)
         
-        response = query.execute()
-        all_records = response.data if response.data else []
-        
-        # Estimated households per region
+        # Estimated households per region (BUCREP approximation)
         households_per_region = {
             "Adamaoua": 450000, "Centre": 1200000, "Est": 380000,
             "Extrême-Nord": 1100000, "Littoral": 850000, "Nord": 620000,
@@ -448,7 +458,7 @@ def api_region_needs():
         
         result = []
         for region in REGIONS:
-            region_records = [r for r in all_records if r['region'] == region]
+            region_records = query.filter_by(region=region).all()
             if region_records:
                 stats = calculate_stats(region_records)
                 households = households_per_region.get(region, 500000)
@@ -476,23 +486,22 @@ def api_export_csv():
         month = request.args.get('month', type=int)
         year = request.args.get('year', type=int)
         
-        query = supabase.table('consumption_records').select('*')
+        query = ConsumptionRecord.query
         if region:
-            query = query.eq('region', region)
+            query = query.filter_by(region=region)
         if month:
-            query = query.eq('month', month)
+            query = query.filter_by(month=month)
         if year:
-            query = query.eq('year', year)
+            query = query.filter_by(year=year)
         
-        response = query.limit(10000).execute()
-        records = response.data if response.data else []
+        records = query.limit(10000).all()
         
         # Build CSV
         csv_lines = ["ID,Région,Période,kWh,Facture (FCFA),Ménage,Soumis par,Date"]
         for r in records:
-            period = f"{MONTHS[r['month']]} {r['year']}"
-            date = r['created_at'][:10] if 'created_at' in r else datetime.now().strftime("%Y-%m-%d")
-            csv_lines.append(f'{r["id"]},"{r["region"]}","{period}",{r["kwh"]},{int(r["bill_amount"])},{r["household_size"]},"{r["submitter_name"]}","{date}"')
+            period = f"{MONTHS[r.month]} {r.year}"
+            date = r.created_at.strftime("%Y-%m-%d")
+            csv_lines.append(f'{r.id},"{r.region}","{period}",{r.kwh},{int(r.bill_amount)},{r.household_size},"{r.submitter_name}","{date}"')
         
         csv_content = '\n'.join(csv_lines)
         return jsonify({'csv': csv_content})
@@ -504,16 +513,15 @@ def api_export_csv():
 def get_dataframe_from_records(records=None):
     """Convert consumption records to pandas DataFrame."""
     if records is None:
-        response = supabase.table('consumption_records').select('*').execute()
-        records = response.data if response.data else []
+        records = ConsumptionRecord.query.all()
     
     data = [{
-        'region': r['region'],
-        'kwh': r['kwh'],
-        'month': r['month'],
-        'year': r['year'],
-        'household_size': r['household_size'],
-        'bill_amount': r['bill_amount']
+        'region': r.region,
+        'kwh': r.kwh,
+        'month': r.month,
+        'year': r.year,
+        'household_size': r.household_size,
+        'bill_amount': r.bill_amount
     } for r in records]
     
     return pd.DataFrame(data) if data else pd.DataFrame()
@@ -1103,17 +1111,22 @@ def server_error(error):
 # ─── Main ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    try:
-        # Test Supabase connection
-        response = supabase.table('consumption_records').select('id', count='exact').limit(1).execute()
-        print("✅ Supabase connection test passed")
-        print(f"📊 Database URL: {SUPABASE_URL[:60]}...")
-        
-    except Exception as e:
-        print(f"❌ Error connecting to Supabase: {e}")
-        import traceback
-        traceback.print_exc()
+    with app.app_context():
+        try:
+            # Create database tables if they don't exist
+            db.create_all()
+            print("✅ Database tables initialized successfully")
+            
+            # Test database connection
+            db.session.execute('SELECT 1')
+            print("✅ Database connection test passed")
+            
+        except Exception as e:
+            print(f"❌ Error during database initialization: {e}")
+            import traceback
+            traceback.print_exc()
     
     port = int(os.environ.get('PORT', 5000))
     print(f"🚀 Starting Flask app on port {port}")
+    print(f"📊 Database: {app.config['SQLALCHEMY_DATABASE_URI'][:60]}...")
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_ENV') == 'development')
