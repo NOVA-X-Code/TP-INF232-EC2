@@ -27,10 +27,14 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement depuis .env (uniquement en développement)
+load_dotenv()
+
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 
-app = Flask(__name__)
 app = Flask(__name__)
 # Configuration de la base de données
 # Supporte: Supabase (PostgreSQL), Turso (SQLite via libsql), ou SQLite local
