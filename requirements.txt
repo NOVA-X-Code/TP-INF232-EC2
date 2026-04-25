@@ -12,4 +12,4 @@ matplotlib
 seaborn==0.13.0
 reportlab==4.0.7
 sqlalchemy-libsql
-psycopg2-binary
+psycopg2
