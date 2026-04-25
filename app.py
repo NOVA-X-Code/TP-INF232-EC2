@@ -4,8 +4,8 @@ Plateforme de collecte et d'analyse des données de consommation électrique
 Avec Supabase comme backend (sans SQLAlchemy)
 """
 
-from flask import Flask, render_template, request, jsonify, send_file
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, jsonify, send_file, Response
+from supabase import create_client, Client
 from datetime import datetime
 import os
 import statistics
@@ -24,17 +24,31 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from datetime import datetime
+from dotenv import load_dotenv
+
+# ─── Load Environment ─────────────────────────────────────────────────────
+
+load_dotenv()
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-# Use SQLite for this Flask app (ignore system DATABASE_URL)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///energie_cameroun.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JSON_SORT_KEYS'] = False
 
-db = SQLAlchemy(app)
+# Initialize Supabase Client
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+supabase: Client = None
+
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"⚠️  Warning: Could not initialize Supabase: {str(e)}")
+        print("    Make sure SUPABASE_URL and SUPABASE_KEY are correct in .env")
+else:
+    raise ValueError("❌ SUPABASE_URL and SUPABASE_KEY environment variables are required!")
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -87,8 +101,8 @@ def calculate_stats(records):
             'avg_bill': 0,
         }
     
-    kwh_values = [r.kwh for r in records]
-    bill_values = [r.bill_amount for r in records]
+    kwh_values = [r['kwh'] for r in records]
+    bill_values = [r['bill_amount'] for r in records]
     
     return {
         'count': len(records),
@@ -146,27 +160,31 @@ def submit():
             # Calculate bill
             bill_amount = calculate_bill(kwh)
             
-            # Save to database
-            record = ConsumptionRecord(
-                region=region,
-                month=month,
-                year=year,
-                kwh=kwh,
-                bill_amount=bill_amount,
-                household_size=household_size,
-                submitter_name=submitter_name or 'Anonyme'
-            )
-            db.session.add(record)
-            db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'id': record.id,
+            # Save to Supabase
+            response = supabase.table('consumption_records').insert({
+                'region': region,
+                'month': month,
+                'year': year,
+                'kwh': kwh,
                 'bill_amount': bill_amount,
-                'message': 'Consommation soumise avec succès!'
-            }), 201
+                'household_size': household_size,
+                'submitter_name': submitter_name or 'Anonyme',
+                'created_at': datetime.utcnow().isoformat()
+            }).execute()
+            
+            if response.data:
+                record_id = response.data[0]['id']
+                return jsonify({
+                    'success': True,
+                    'id': record_id,
+                    'bill_amount': bill_amount,
+                    'message': 'Consommation soumise avec succès!'
+                }), 201
+            else:
+                return jsonify({'error': 'Erreur lors de la sauvegarde'}), 400
+                
         except Exception as e:
-            db.session.rollback()
+            print(f"Error in submit: {str(e)}")
             return jsonify({'error': str(e)}), 400
     
     return render_template('submit.html', regions=REGIONS, months=MONTHS)
@@ -219,17 +237,31 @@ def api_list_consumption():
         limit = request.args.get('limit', 500, type=int)
         offset = request.args.get('offset', 0, type=int)
         
-        query = ConsumptionRecord.query
+        # Build query
+        query = supabase.table('consumption_records').select('*')
         
         if region:
             query = query.eq('region', region)
         if month:
             query = query.eq('month', month)
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
         
-        total = query.count()
-        records = query.order_by(ConsumptionRecord.created_at.desc()).limit(limit).offset(offset).all()
+        # Get total count
+        count_response = supabase.table('consumption_records').select('id', count='exact')
+        if region:
+            count_response = count_response.eq('region', region)
+        if month:
+            count_response = count_response.eq('month', month)
+        if year:
+            count_response = count_response.eq('year', year)
+        
+        total_count = count_response.execute()
+        total = total_count.count if hasattr(total_count, 'count') else 0
+        
+        # Get records
+        response = query.order('created_at', desc=True).range(offset, offset + limit - 1).execute()
+        records = response.data if response.data else []
         
         return jsonify({
             'records': records,
@@ -250,13 +282,15 @@ def api_stats_by_region():
         
         year = request.args.get('year', type=int)
         
-        query = ConsumptionRecord.query
-        if year:
-            query = query.filter_by(year=year)
-        
         stats_by_region = {}
         for region in REGIONS:
-            region_records = query.filter_by(region=region).all()
+            query = supabase.table('consumption_records').select('*').eq('region', region)
+            if year:
+                query = query.eq('year', year)
+            
+            response = query.execute()
+            region_records = response.data if response.data else []
+            
             if region_records:
                 stats = calculate_stats(region_records)
                 stats['region'] = region
@@ -471,19 +505,21 @@ def get_all_records_for_ml():
     result = supabase.table('consumption_records').select('*').execute()
     return result.data or []
 
-def get_dataframe_from_records():
+def get_dataframe_from_records(records=None):
     """Convert consumption records to pandas DataFrame."""
     if records is None:
-        records = ConsumptionRecord.query.all()
+        records = get_all_records_for_ml()
     
     data = [{
-        'region': r.region,
-        'kwh': r.kwh,
-        'month': r.month,
-        'year': r.year,
-        'household_size': r.household_size,
-        'bill_amount': r.bill_amount
+        'region': r['region'],
+        'kwh': r['kwh'],
+        'month': r['month'],
+        'year': r['year'],
+        'household_size': r['household_size'],
+        'bill_amount': r['bill_amount']
     } for r in records]
+    
+    return pd.DataFrame(data) if data else pd.DataFrame()
     
     return pd.DataFrame(data)
 
@@ -932,12 +968,21 @@ def server_error(error):
     return render_template('500.html'), 500
 
 
-
 # ─── Main ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
+    try:
+        # Test Supabase connection
+        if supabase:
+            response = supabase.table('consumption_records').select('id', count='exact').limit(1).execute()
+            print("✅ Supabase connection test passed")
+            print(f"📊 Database URL: {SUPABASE_URL[:60]}...")
+        
+    except Exception as e:
+        print(f"❌ Error connecting to Supabase: {e}")
+        import traceback
+        traceback.print_exc()
     
     port = int(os.environ.get('PORT', 5000))
+    print(f"🚀 Starting Flask app on port {port}")
     app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_ENV') == 'development')
