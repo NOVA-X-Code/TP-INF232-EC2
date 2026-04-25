@@ -202,6 +202,21 @@
     </footer>
 
     <script>
+      const MONTHS = {
+        1: "Janvier",
+        2: "Février",
+        3: "Mars",
+        4: "Avril",
+        5: "Mai",
+        6: "Juin",
+        7: "Juillet",
+        8: "Août",
+        9: "Septembre",
+        10: "Octobre",
+        11: "Novembre",
+        12: "Décembre",
+      };
+
       async function loadData() {
         const region = document.getElementById("filterRegion").value;
         const month = document.getElementById("filterMonth").value;
@@ -226,14 +241,18 @@
           }
 
           data.records.forEach((record) => {
+            const monthName = MONTHS[record.month] || `Mois ${record.month}`;
+            const date = new Date(record.created_at).toLocaleDateString(
+              "fr-FR",
+            );
             const row = `<tr>
                         <td>${record.id}</td>
                         <td>${record.region}</td>
-                        <td>${record.month_name} ${record.year}</td>
-                        <td>${record.kwh.toFixed(1)}</td>
-                        <td>${Math.round(record.bill_amount).toLocaleString("fr-FR")}</td>
+                        <td>${monthName} ${record.year}</td>
+                        <td>${parseFloat(record.kwh).toFixed(1)}</td>
+                        <td>${Math.round(parseFloat(record.bill_amount)).toLocaleString("fr-FR")}</td>
                         <td>${record.household_size}</td>
-                        <td>${new Date(record.created_at).toLocaleDateString("fr-FR")}</td>
+                        <td>${date}</td>
                     </tr>`;
             tbody.innerHTML += row;
           });

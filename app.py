@@ -970,18 +970,26 @@ def server_error(error):
 
 # ─── Main ─────────────────────────────────────────────────────────────────
 
+def test_supabase_connection():
+    """Test Supabase connection in background"""
+    import threading
+    import time
+    
+    def test():
+        try:
+            time.sleep(1)  # Give Flask time to start
+            if supabase:
+                response = supabase.table('consumption_records').select('id', count='exact').limit(1).execute()
+                print("✅ Supabase connection test passed")
+                print(f"📊 Database URL: {SUPABASE_URL[:60]}...")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not connect to Supabase: {str(e)[:100]}")
+    
+    thread = threading.Thread(target=test, daemon=True)
+    thread.start()
+
 if __name__ == '__main__':
-    try:
-        # Test Supabase connection
-        if supabase:
-            response = supabase.table('consumption_records').select('id', count='exact').limit(1).execute()
-            print("✅ Supabase connection test passed")
-            print(f"📊 Database URL: {SUPABASE_URL[:60]}...")
-        
-    except Exception as e:
-        print(f"❌ Error connecting to Supabase: {e}")
-        import traceback
-        traceback.print_exc()
+    test_supabase_connection()
     
     port = int(os.environ.get('PORT', 5000))
     print(f"🚀 Starting Flask app on port {port}")
