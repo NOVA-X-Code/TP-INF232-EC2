@@ -313,11 +313,12 @@ def api_national_stats():
         if year:
             query = query.eq('year', year)
         
-        records = query.all()
+        response = query.execute()
+        records = response.data if response.data else []
         stats = calculate_stats(records)
         
         # Count regions with data
-        regions_with_data = len(set(r.region for r in records))
+        regions_with_data = len(set(r['region'] for r in records))
         
         return jsonify({
             'total_records': stats['count'],
@@ -346,16 +347,17 @@ def api_monthly_trends():
         if region:
             query = query.eq('region', region)
         
-        records = query.all()
+        response = query.execute()
+        records = response.data if response.data else []
         
         # Group by year-month
         trends = {}
         for record in records:
-            key = f"{record.year}-{record.month:02d}"
+            key = f"{record['year']}-{record['month']:02d}"
             if key not in trends:
-                trends[key] = {'year': record.year, 'month': record.month, 'region': record.region, 'kwh_values': [], 'total_kwh': 0, 'count': 0}
-            trends[key]['kwh_values'].append(record.kwh)
-            trends[key]['total_kwh'] += record.kwh
+                trends[key] = {'year': record['year'], 'month': record['month'], 'region': record['region'], 'kwh_values': [], 'total_kwh': 0, 'count': 0}
+            trends[key]['kwh_values'].append(record['kwh'])
+            trends[key]['total_kwh'] += record['kwh']
             trends[key]['count'] += 1
         
         result_list = []
@@ -387,7 +389,8 @@ def api_distribution():
         if region:
             query = query.eq('region', region)
         
-        records = query.all()
+        response = query.execute()
+        records = response.data if response.data else []
         
         buckets = {
             "0-50": 0,
@@ -399,7 +402,7 @@ def api_distribution():
         }
         
         for record in records:
-            kwh = record.kwh
+            kwh = record['kwh']
             if kwh <= 50:
                 buckets["0-50"] += 1
             elif kwh <= 110:
@@ -428,7 +431,7 @@ def api_region_needs():
         
         query = supabase.table('consumption_records').select('*')
         if year:
-            query = query.filter_by(year=year)
+            query = query.eq('year', year)
         
         response = query.execute()
         all_records = response.data if response.data else []
@@ -442,7 +445,7 @@ def api_region_needs():
         
         result_list = []
         for region in REGIONS:
-            region_records = query.filter_by(region=region).all()
+            region_records = [r for r in all_records if r['region'] == region]
             if region_records:
                 stats = calculate_stats(region_records)
                 households = households_per_region.get(region, 500000)
@@ -481,14 +484,15 @@ def api_export_csv():
         if year:
             query = query.eq('year', year)
         
-        records = query.limit(10000).all()
+        response = query.limit(10000).execute()
+        records = response.data if response.data else []
         
         # Build CSV
         csv_lines = ["ID,Région,Période,kWh,Facture (FCFA),Ménage,Soumis par,Date"]
         for r in records:
-            period = f"{MONTHS[r.month]} {r.year}"
-            date = r.created_at.strftime("%Y-%m-%d")
-            csv_lines.append(f'{r.id},"{r.region}","{period}",{r.kwh},{int(r.bill_amount)},{r.household_size},"{r.submitter_name}","{date}"')
+            period = f"{MONTHS[r['month']]} {r['year']}"
+            date_str = r['created_at'].split('T')[0] if 'T' in r['created_at'] else r['created_at']
+            csv_lines.append(f'{r["id"]},"{r["region"]}","{period}",{r["kwh"]},{int(r["bill_amount"])},{r["household_size"]},"{r["submitter_name"]}","{date_str}"')
         
         csv_content = '\n'.join(csv_lines)
         return jsonify({'csv': csv_content})
