@@ -31,21 +31,35 @@ from datetime import datetime
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-# Render fournit souvent DATABASE_URL, ou utilisez votre propre variable
+app = Flask(__name__)
+# Configuration de la base de données
+# Supporte: Supabase (PostgreSQL), Turso (SQLite via libsql), ou SQLite local
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
+    # Utiliser Supabase ou autre DB distante via DATABASE_URL
+    # Format Supabase: postgresql://user:password@host:5432/dbname
+    # Remplacer postgresql:// par postgresql+psycopg2:// pour SQLAlchemy
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 else:
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///local.db"
+    # Fallback: SQLite local
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///energie_cameroun.db"
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 3600,
+    "connect_args": {
+        "connect_timeout": 30,
+    } if "postgresql" in app.config["SQLALCHEMY_DATABASE_URI"] else {}
+}
 
 db = SQLAlchemy(app)
 
-with app.app_context():
-    db.create_all()
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
