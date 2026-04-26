@@ -1,14 +1,6 @@
 # Configuration Supabase
 
-## Problème Actuel
-
-La clé API Supabase fournie semble **tronquée ou invalide**:
-
-```
-SUPABASE_KEY=sb_publishable_Tw_ucAoJj5LT09l8a1zy0g_7ON7D4bz
-```
-
-## Solution: Obtenir la Clé API Correcte
+## Comment Obtenir la Clé API SUPERBASE
 
 ### Étape 1: Accéder à Supabase
 
@@ -38,7 +30,7 @@ SUPABASE_KEY=sb_publishable_Tw_ucAoJj5LT09l8a1zy0g_7ON7D4bz
 7. Ouvrez le fichier `.env`:
 
    ```
-   SUPABASE_URL=https://mxwqyaghxnpxkfffebeu.supabase.co
+   SUPABASE_URL=https://-------.supabase.co
    SUPABASE_KEY=[VOTRE_CLÉ_ANON_COMPLÈTE]
    FLASK_ENV=development
    PORT=5000

@@ -215,7 +215,8 @@ Exemple : Pour 150 kWh
 4. **Configurer les variables d'environnement**
    - Ajouter dans "Environment" :
      - `FLASK_ENV` : production
-     - `DATABASE_URL` : (optionnel, sinon SQLite)
+     - `SUPABASE_URL` : https://-------.supabase.co
+     - `SUPABASE_KEY` : [VOTRE_CLÉ_ANON_COMPLÈTE]
 
 5. **Déployer**
    - Cliquer sur "Create Web Service"
