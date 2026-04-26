@@ -425,7 +425,11 @@ def api_distribution():
 
 @app.route('/api/consumption/region-needs', methods=['GET'])
 def api_region_needs():
-    """Regional energy needs estimation."""
+    """Regional energy needs estimation using multilinear regression.
+    
+    Estimates energy consumption using regression model: f(region, month, households)
+    Sums predictions across 12 months for annual needs per region.
+    """
     try:
         if not supabase:
             return jsonify({'error': 'Base de données non disponible'}), 500
@@ -439,32 +443,94 @@ def api_region_needs():
         response = query.execute()
         all_records = response.data if response.data else []
         
+        if not all_records:
+            return jsonify({'error': 'Pas de données disponibles'}), 400
+        
         # Estimated households per region
         households_per_region = {
-            "Adamaoua": 450000, "Centre": 1200000, "Est": 380000,
-            "Extrême-Nord": 1100000, "Littoral": 850000, "Nord": 620000,
-            "Nord-Ouest": 750000, "Ouest": 900000, "Sud": 280000, "Sud-Ouest": 420000,
+            "Adamaoua": 1300000, "Centre": 4300000, "Est": 100000,
+            "Extrême-Nord": 4200000, "Littoral": 3800000, "Nord": 2600000,
+            "Nord-Ouest": 1800000, "Ouest": 2300000, "Sud": 870000, "Sud-Ouest": 1200000,
         }
         
+        # Train multilinear regression model
+        df = pd.DataFrame([{
+            'region': r['region'],
+            'kwh': r['kwh'],
+            'month': r['month'],
+            'household_size': r['household_size']
+        } for r in all_records])
+        
+        if len(df) < 3:
+            return jsonify({'error': 'Données insuffisantes pour la régression'}), 400
+        
+        # Create region mapping
+        region_mapping = {r: i for i, r in enumerate(sorted(df['region'].unique()))}
+        df['region_code'] = df['region'].map(region_mapping)
+        
+        # Train model: f(region_code, month, household_size) -> kwh
+        X = df[['region_code', 'month', 'household_size']].values
+        y = df['kwh'].values
+        
+        model = LinearRegression()
+        model.fit(X, y)
+        
+        region_code_coef = model.coef_[0]
+        month_coef = model.coef_[1]
+        household_coef = model.coef_[2]
+        intercept = model.intercept_
+        r_squared = model.score(X, y)
+        
+        # Calculate needs for each region
         result_list = []
         for region in REGIONS:
-            region_records = [r for r in all_records if r['region'] == region]
-            if region_records:
-                stats = calculate_stats(region_records)
-                households = households_per_region.get(region, 500000)
-                monthly_need_mwh = (stats['avg_kwh'] * households) / 1000
-                annual_need_gwh = (monthly_need_mwh * 12) / 1000
-                
-                result_list.append({
-                    'region': region,
-                    'avg_monthly_kwh': stats['avg_kwh'],
-                    'sample_count': stats['count'],
-                    'estimated_households': households,
-                    'estimated_monthly_need_mwh': monthly_need_mwh,
-                    'estimated_annual_need_gwh': annual_need_gwh,
-                })
+            if region not in region_mapping:
+                continue
+            
+            households = households_per_region.get(region, 500000)
+            region_code = region_mapping[region]
+            
+            # Sum predictions for all 12 months
+            monthly_predictions = []
+            for month in range(1, 13):
+                # f(region_code, month, households) = intercept + coef_region*region_code + coef_month*month + coef_household*households
+                predicted_kwh = intercept + (region_code_coef * region_code) + (month_coef * month) + (household_coef * households)
+                monthly_predictions.append(max(0, predicted_kwh))  # Avoid negative predictions
+            
+            annual_kwh = sum(monthly_predictions)
+            avg_monthly_kwh = annual_kwh / 12
+            
+            # Get sample count for this region
+            region_data = df[df['region'] == region]
+            sample_count = len(region_data)
+            
+            result_list.append({
+                'region': region,
+                'estimated_households': households,
+                'estimated_monthly_avg_kwh': round(avg_monthly_kwh, 2),
+                'estimated_annual_kwh': round(annual_kwh, 2),
+                'estimated_annual_mwh': round(annual_kwh / 1000, 2),
+                'estimated_annual_gwh': round(annual_kwh / 1000000, 2),
+                'sample_count': sample_count,
+                'monthly_breakdown': [round(p, 2) for p in monthly_predictions],
+            })
         
-        return jsonify(result_list)
+        # Sort by annual needs (descending)
+        result_list.sort(key=lambda x: x['estimated_annual_gwh'], reverse=True)
+        
+        return jsonify({
+            'metadata': {
+                'model_r_squared': round(r_squared, 4),
+                'coefficients': {
+                    'region': round(region_code_coef, 4),
+                    'month': round(month_coef, 4),
+                    'household_size': round(household_coef, 4),
+                    'intercept': round(intercept, 4)
+                },
+                'data_points_used': len(df)
+            },
+            'regions': result_list
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
