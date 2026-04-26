@@ -914,8 +914,12 @@ def api_clustering():
         result = clustering_analysis()
         if result is None:
             return jsonify({'error': 'Pas assez de données'}), 400
-        return jsonify(result)
+        # Return only the clusters array, not the full dict
+        return jsonify(result['clusters'])
     except Exception as e:
+        print(f"Clustering error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/analysis/advanced-stats', methods=['GET'])
@@ -925,8 +929,25 @@ def api_advanced_stats():
         result = advanced_stats()
         if result is None:
             return jsonify({'error': 'Pas de données'}), 400
-        return jsonify(result)
+        # Map the keys to match frontend expectations
+        return jsonify({
+            'count': result['count'],
+            'mean': result['avg_kwh'],
+            'median': result['median_kwh'],
+            'min': result['min_kwh'],
+            'max': result['max_kwh'],
+            'std_dev': result['std_dev_kwh'],
+            'variance': result['variance'],
+            'q1': result['q1'],
+            'q3': result['q3'],
+            'iqr': result['iqr'],
+            'skewness': result['skewness'],
+            'kurtosis': result['kurtosis']
+        })
     except Exception as e:
+        print(f"Advanced stats error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 400
 
 
