@@ -234,7 +234,7 @@ def api_list_consumption():
         region = request.args.get('region')
         month = request.args.get('month', type=int)
         year = request.args.get('year', type=int)
-        limit = request.args.get('limit', 500, type=int)
+        limit = request.args.get('limit', 1000, type=int)
         offset = request.args.get('offset', 0, type=int)
         
         # Build query
