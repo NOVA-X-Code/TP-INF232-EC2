@@ -187,10 +187,20 @@
       async function loadRegionNeeds() {
         try {
           const response = await fetch("/api/consumption/region-needs");
-          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const result = await response.json();
+
+          // Handle new API response structure with metadata and regions array
+          const data = result.regions || result;
+          
+          if (!Array.isArray(data) || data.length === 0) {
+            throw new Error('No regional data available');
+          }
 
           const labels = data.map((r) => r.region);
-          const needs = data.map((r) => r.estimated_annual_need_gwh);
+          const needs = data.map((r) => r.estimated_annual_gwh);
 
           new Chart(document.getElementById("needsChart"), {
             type: "bar",
@@ -222,12 +232,15 @@
           tbody.innerHTML = "";
 
           data.forEach((region) => {
+            // Calculate monthly need in MWh from annual in MWh
+            const monthly_mwh = region.estimated_annual_mwh / 12;
+            
             const row = `<tr>
                         <td style="font-weight: 600;">${region.region}</td>
-                        <td style="text-align: right;">${Math.round(region.avg_monthly_kwh)}</td>
+                        <td style="text-align: right;">${Math.round(region.estimated_monthly_avg_kwh).toLocaleString("fr-FR")}</td>
                         <td style="text-align: right;">${region.estimated_households.toLocaleString("fr-FR")}</td>
-                        <td style="text-align: right;">${Math.round(region.estimated_monthly_need_mwh).toLocaleString("fr-FR")}</td>
-                        <td style="text-align: right; font-weight: 600; color: #0f1e3d;">${region.estimated_annual_need_gwh.toFixed(2)}</td>
+                        <td style="text-align: right;">${Math.round(monthly_mwh).toLocaleString("fr-FR")}</td>
+                        <td style="text-align: right; font-weight: 600; color: #0f1e3d;">${region.estimated_annual_gwh.toFixed(2)}</td>
                         <td style="text-align: right;">${region.sample_count}</td>
                     </tr>`;
             tbody.innerHTML += row;
@@ -235,7 +248,7 @@
         } catch (error) {
           console.error("Error loading region needs:", error);
           document.getElementById("needsTable").innerHTML =
-            '<tr><td colspan="6" style="text-align: center; color: red;">Erreur lors du chargement</td></tr>';
+            '<tr><td colspan="6" style="text-align: center; color: red;">Erreur lors du chargement: ' + error.message + '</td></tr>';
         }
       }
 
