@@ -1,7 +1,7 @@
 """
 ÉnergieData Cameroun - Application web python Flask
 Plateforme de collecte et d'analyse des données de consommation électrique
-Avec Supabase comme backend (sans SQLAlchemy)
+Avec Supabase comme DataBase
 """
 
 from flask import Flask, render_template, request, jsonify, send_file, Response
@@ -117,7 +117,10 @@ def calculate_stats(records):
     }
 
 # ─── Routes ────────────────────────────────────────────────────────────────
-
+@app.route("/health")
+def health():
+    return "ok", 200
+    
 @app.route('/')
 def index():
     """Landing page."""
