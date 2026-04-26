@@ -259,8 +259,8 @@ def api_list_consumption():
         total_count = count_response.execute()
         total = total_count.count if hasattr(total_count, 'count') else 0
         
-        # Get records
-        response = query.order('created_at', desc=True).range(offset, offset + limit - 1).execute()
+        # Get records - order by id ascending
+        response = query.order('id', desc=False).range(offset, offset + limit - 1).execute()
         records = response.data if response.data else []
         
         return jsonify({
